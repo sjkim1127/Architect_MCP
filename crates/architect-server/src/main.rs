@@ -75,10 +75,16 @@ impl ServerHandler for ArchitectServer {
 
         if request.argument.name == "function_name" {
             let value = request.argument.value.to_lowercase();
-            let cached = self.state.cached_definitions.lock().unwrap();
-            for name in cached.keys() {
-                if name.to_lowercase().contains(&value) {
-                    completions.push(name.clone());
+            let root_opt = self.state.last_root.lock().map(|g| g.clone()).unwrap_or(None);
+            
+            if let Some(root) = root_opt {
+                let cache = self.state.workspace_cache.lock().map(|g| g.clone()).unwrap_or_default();
+                if let Some(ws_state) = cache.get(&root) {
+                    for name in ws_state.cached_definitions.keys() {
+                        if name.to_lowercase().contains(&value) {
+                            completions.push(name.clone());
+                        }
+                    }
                 }
             }
         }

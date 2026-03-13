@@ -8,9 +8,15 @@ pub struct MetricsAnalyzer;
 impl MetricsAnalyzer {
     pub fn analyze(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Vec<Value> {
         let mut parser = Parser::new();
-        parser.set_language(&provider.language()).expect("Error loading grammar");
+        if let Err(e) = parser.set_language(&provider.language()) {
+            tracing::error!("Error loading grammar for {:?}: {}", path, e);
+            return Vec::new();
+        }
         
-        let tree = parser.parse(content, None).unwrap();
+        let tree = match parser.parse(content, None) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
         let mut cursor = tree.walk();
         let mut results = Vec::new();
         

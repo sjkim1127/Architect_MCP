@@ -44,7 +44,7 @@ impl ArchitectResources {
         &self,
         request: ReadResourceRequestParams,
     ) -> Result<ReadResourceResult, ErrorData> {
-        let root_opt = self.state.last_root.lock().unwrap().clone();
+        let root_opt = self.state.last_root.lock().map(|guard| guard.clone()).unwrap_or(None);
 
         match request.uri.as_str() {
             "architect://call-graph/summary" => {
@@ -61,7 +61,11 @@ impl ArchitectResources {
                 self.wrap_text_resource(request.uri, "application/json", summary)
             }
             "architect://visual/mermaid" => {
-                let diagram = self.state.get_mermaid_diagram();
+                let diagram = if let Some(root) = root_opt {
+                    self.state.get_mermaid_diagram(&root)
+                } else {
+                    "graph TD;\n    Error[No workspace analyzed];".to_string()
+                };
                 self.wrap_text_resource(request.uri, "text/plain", diagram)
             }
             "architect://metrics/debt" => {

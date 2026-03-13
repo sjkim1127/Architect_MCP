@@ -107,8 +107,9 @@ impl ArchitectTools {
         }
 
         {
-            let mut last_root = self.state.last_root.lock().unwrap();
-            *last_root = Some(root.to_path_buf());
+            if let Ok(mut last_root) = self.state.last_root.lock() {
+                *last_root = Some(root.to_path_buf());
+            }
         }
 
         let definitions = self.state.index_definitions(root);
@@ -123,14 +124,6 @@ impl ArchitectTools {
         }
 
         let calls = self.state.find_calls(root, &definitions);
-
-        {
-            let mut cached_defs = self.state.cached_definitions.lock().unwrap();
-            *cached_defs = definitions.clone();
-            
-            let mut cached_calls = self.state.cached_calls.lock().unwrap();
-            *cached_calls = calls.clone();
-        }
 
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
@@ -158,7 +151,7 @@ impl ArchitectTools {
         Parameters(args): Parameters<ImpactAnalysisArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root_opt = self.state.last_root.lock().unwrap().clone();
+        let root_opt = self.state.last_root.lock().map(|guard| guard.clone()).unwrap_or(None);
         let root = root_opt.as_deref().unwrap_or(Path::new("."));
         let result = self.state.get_blast_radius(root, Some(args.function_name), None);
         
@@ -327,10 +320,27 @@ impl ArchitectTools {
         Parameters(args): Parameters<RefactorSuggestionArgs>,
         context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root_opt = self.state.last_root.lock().unwrap().clone();
+        let root_opt = self.state.last_root.lock().map(|guard| guard.clone()).unwrap_or(None);
         let summary_text = if let Some(root) = root_opt {
              let definitions = self.state.index_definitions(&root);
-             format!("Workspace: {}\nTotal Definitions: {}\nFunctions: {:?}", root.display(), definitions.len(), definitions.keys().collect::<Vec<_>>())
+             
+             // AI 토큰 최적화: 전체 함수 목록 대신, 타겟 함수와 연관된(Blast Radius) 심볼들만 추출
+             let context_symbols = if let Some(ref target) = args.function_name {
+                 let blast = self.state.get_blast_radius(&root, Some(target.clone()), None);
+                 let related: Vec<String> = blast["symbol_chain"].as_array()
+                     .map(|arr| arr.iter().filter_map(|v| v["callee_name"].as_str().map(|s| s.to_string())).collect())
+                     .unwrap_or_default();
+                 
+                 if related.is_empty() {
+                     definitions.keys().take(50).cloned().collect::<Vec<_>>() // 최소한의 맥락
+                 } else {
+                     related
+                 }
+             } else {
+                 definitions.keys().take(100).cloned().collect::<Vec<_>>() // 전체 요약 시 상위 100개로 제한
+             };
+
+             format!("Workspace: {}\nTotal Definitions Found: {}\nRelevant/Related Functions: {:?}", root.display(), definitions.len(), context_symbols)
         } else {
             "No workspace analyzed yet.".to_string()
         };

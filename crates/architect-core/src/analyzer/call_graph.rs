@@ -10,10 +10,25 @@ impl SymbolAnalyzer {
     pub fn index_definitions(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Vec<(String, FnDefinition)> {
         let mut parser = Parser::new();
         let lang = provider.language();
-        parser.set_language(&lang).expect("Error loading grammar");
+        if let Err(e) = parser.set_language(&lang) {
+            tracing::error!("Error loading grammar for {:?}: {}", path, e);
+            return Vec::new();
+        }
 
-        let tree = parser.parse(content, None).unwrap();
-        let query = Query::new(&lang, provider.fn_query()).unwrap();
+        let tree = match parser.parse(content, None) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let query_str = provider.fn_query();
+        let query = match Query::new(&lang, query_str) {
+            Ok(q) => q,
+            Err(e) => {
+                tracing::error!("Invalid function query for {:?}: {}", path, e);
+                return Vec::new();
+            }
+        };
+
         let mut cursor = QueryCursor::new();
         let matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
         let mut defs = Vec::new();
@@ -41,10 +56,16 @@ impl SymbolAnalyzer {
     ) -> Vec<CallInfo> {
         let mut parser = Parser::new();
         let lang = provider.language();
-        parser.set_language(&lang).expect("Error loading grammar");
+        if let Err(e) = parser.set_language(&lang) {
+            tracing::error!("Error loading grammar for {:?}: {}", path, e);
+            return Vec::new();
+        }
 
         let query_str = "(call_expression function: (identifier) @call_name) (call_expression (identifier) @call_name)";
-        let tree = parser.parse(content, None).unwrap();
+        let tree = match parser.parse(content, None) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
         let mut result = Vec::new();
 
         if let Ok(query) = Query::new(&lang, query_str) {

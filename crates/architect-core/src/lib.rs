@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use walkdir::WalkDir;
+use ignore::WalkBuilder;
 use rayon::prelude::*;
 
 pub mod languages;
@@ -12,11 +12,16 @@ pub mod analyzer;
 use languages::{LanguageRegistry, LanguageProvider};
 use analyzer::{MetricsAnalyzer, DependencyAnalyzer, SymbolAnalyzer};
 
+#[derive(Default, Clone, Debug)]
+pub struct WorkspaceState {
+    pub cached_definitions: HashMap<String, Vec<FnDefinition>>,
+    pub cached_calls: Vec<CallInfo>,
+}
+
 #[derive(Clone)]
 pub struct SharedState {
     pub last_root: Arc<Mutex<Option<PathBuf>>>,
-    pub cached_definitions: Arc<Mutex<HashMap<String, Vec<FnDefinition>>>>,
-    pub cached_calls: Arc<Mutex<Vec<CallInfo>>>,
+    pub workspace_cache: Arc<Mutex<HashMap<PathBuf, WorkspaceState>>>,
     pub registry: Arc<LanguageRegistry>,
 }
 
@@ -24,39 +29,48 @@ impl SharedState {
     pub fn new() -> Self {
         Self {
             last_root: Arc::new(Mutex::new(None)),
-            cached_definitions: Arc::new(Mutex::new(HashMap::new())),
-            cached_calls: Arc::new(Mutex::new(Vec::new())),
+            workspace_cache: Arc::new(Mutex::new(HashMap::new())),
             registry: Arc::new(LanguageRegistry::new()),
         }
     }
 
     fn get_files(&self, root: &Path) -> Vec<PathBuf> {
-        WalkDir::new(root)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                !e.path().is_dir() && 
-                !e.path().to_string_lossy().contains("/target/") && 
-                !e.path().to_string_lossy().contains("/node_modules/") &&
-                !e.path().to_string_lossy().contains("/.git/")
-            })
-            .map(|e| e.path().to_path_buf())
-            .collect()
+        let mut files = Vec::new();
+        for entry in WalkBuilder::new(root)
+            .hidden(true)
+            .git_ignore(true)
+            .build()
+            .filter_map(|e| e.ok()) {
+            if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                files.push(entry.path().to_path_buf());
+            }
+        }
+        files
     }
 
-    pub fn index_definitions(&self, root: &Path) -> HashMap<String, Vec<FnDefinition>> {
+    /// DRY: 병렬 파일 처리를 위한 공통 헬퍼 메서드
+    fn process_files_parallel<F, R>(&self, root: &Path, f: F) -> Vec<R> 
+    where 
+        F: Fn(&Path, &str, &dyn LanguageProvider) -> R + Sync + Send,
+        R: Send
+    {
         let files = self.get_files(root);
-        let analyzer = SymbolAnalyzer;
-        
-        let all_defs: Vec<Vec<(String, FnDefinition)>> = files.par_iter().map(|path| {
+        files.par_iter().filter_map(|path| {
             let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
             if let Some(provider) = self.registry.get_provider(ext) {
                 if let Ok(content) = std::fs::read_to_string(path) {
-                    return analyzer.index_definitions(path, &content, provider.as_ref());
+                    return Some(f(path, &content, provider.as_ref()));
                 }
             }
-            Vec::new()
-        }).collect();
+            None
+        }).collect()
+    }
+
+    pub fn index_definitions(&self, root: &Path) -> HashMap<String, Vec<FnDefinition>> {
+        let analyzer = SymbolAnalyzer;
+        let all_defs = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.index_definitions(path, content, provider)
+        });
 
         let mut definitions: HashMap<String, Vec<FnDefinition>> = HashMap::new();
         for file_defs in all_defs {
@@ -64,47 +78,44 @@ impl SharedState {
                 definitions.entry(name).or_default().push(def);
             }
         }
+
+        // 워크스페이스별 캐시에 저장
+        if let Ok(mut cache) = self.workspace_cache.lock() {
+            cache.entry(root.to_path_buf()).or_default().cached_definitions = definitions.clone();
+        }
+
         definitions
     }
 
     pub fn find_calls(&self, root: &Path, definitions: &HashMap<String, Vec<FnDefinition>>) -> Vec<CallInfo> {
-        let files = self.get_files(root);
         let analyzer = SymbolAnalyzer;
+        let all_calls = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.find_calls(path, content, provider, definitions)
+        });
 
-        let all_calls: Vec<Vec<CallInfo>> = files.par_iter().map(|path| {
-            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-            if let Some(provider) = self.registry.get_provider(ext) {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    return analyzer.find_calls(path, &content, provider.as_ref(), definitions);
-                }
-            }
-            Vec::new()
-        }).collect();
+        let calls: Vec<CallInfo> = all_calls.into_iter().flatten().collect();
 
-        all_calls.into_iter().flatten().collect()
+        // 워크스페이스별 캐시에 저장
+        if let Ok(mut cache) = self.workspace_cache.lock() {
+            cache.entry(root.to_path_buf()).or_default().cached_calls = calls.clone();
+        }
+
+        calls
     }
 
     pub fn get_metrics(&self, root: &Path) -> Value {
-        let files = self.get_files(root);
         let analyzer = MetricsAnalyzer;
-
-        let all_metrics: Vec<Vec<Value>> = files.par_iter().map(|path| {
-            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-            if let Some(provider) = self.registry.get_provider(ext) {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    return analyzer.analyze(path, &content, provider.as_ref());
-                }
-            }
-            Vec::new()
-        }).collect();
+        let all_metrics = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.analyze(path, content, provider)
+        });
 
         json!(all_metrics.into_iter().flatten().collect::<Vec<_>>())
     }
 
     pub fn get_dependencies(&self, root: &Path) -> Value {
-        let files = self.get_files(root);
         let analyzer = DependencyAnalyzer;
-
+        
+        let files = self.get_files(root);
         let all_deps: HashMap<String, Vec<String>> = files.par_iter().filter_map(|path| {
             let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
             if let Some(provider) = self.registry.get_provider(ext) {
@@ -125,15 +136,15 @@ impl SharedState {
     pub fn detect_architecture_pattern(&self, root: &Path) -> Value {
         let mut folder_names = HashSet::new();
         
-        for entry in WalkDir::new(root)
-            .max_depth(4)
-            .into_iter()
+        for entry in WalkBuilder::new(root)
+            .max_depth(Some(4))
+            .hidden(true)
+            .git_ignore(true)
+            .build()
             .filter_map(|e| e.ok()) {
-            if entry.path().is_dir() {
-                if let Some(name) = entry.path().file_name().and_then(|s| s.to_str()) {
-                    if name != "target" && name != "node_modules" && name != ".git" {
-                        folder_names.insert(name.to_lowercase());
-                    }
+            if entry.file_type().map_or(false, |ft| ft.is_dir()) {
+                if let Some(name) = entry.file_name().to_str() {
+                    folder_names.insert(name.to_lowercase());
                 }
             }
         }
@@ -170,8 +181,10 @@ impl SharedState {
         })
     }
 
-    pub fn get_mermaid_diagram(&self) -> String {
-        let calls = self.cached_calls.lock().unwrap();
+    pub fn get_mermaid_diagram(&self, root: &Path) -> String {
+        let cache = self.workspace_cache.lock().unwrap();
+        let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
+        
         let mut diagram = String::from("graph TD;\n");
         let mut seen = HashSet::new();
 
@@ -188,13 +201,15 @@ impl SharedState {
     }
 
     pub fn get_blast_radius(&self, root: &Path, target_symbol: Option<String>, target_file: Option<String>) -> Value {
-        let calls = self.cached_calls.lock().unwrap();
+        let cache = self.workspace_cache.lock().unwrap();
+        let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
+        
         let mut impacted_symbols = Vec::new();
         let mut impacted_files = HashSet::new();
 
         // 1. Symbol-level Impact (Call Graph)
         if let Some(symbol) = target_symbol {
-            let mut to_visit = vec![symbol];
+            let mut to_visit: Vec<String> = vec![symbol];
             let mut visited = HashSet::new();
 
             while let Some(callee) = to_visit.pop() {
@@ -284,7 +299,8 @@ impl SharedState {
 
     pub fn lint_architecture(&self, root: &Path, rules_json: Option<String>) -> Value {
         let mut violations = Vec::new();
-        let calls = self.cached_calls.lock().unwrap();
+        let cache = self.workspace_cache.lock().unwrap();
+        let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
         let deps_value = self.get_dependencies(root);
 
         // 1. 규칙 파싱 (예: {"forbidden_deps": [["core", "server"]]})
