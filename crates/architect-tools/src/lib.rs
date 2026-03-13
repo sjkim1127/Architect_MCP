@@ -32,8 +32,50 @@ pub struct ImpactAnalysisArgs {
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
 pub struct ArchLintArgs {
+    #[schemars(description = "Root directory of the project to lint")]
+    pub path: String,
     #[schemars(description = "Optional: Custom architecture rules in JSON format. E.g. {\"forbidden_deps\": [[\"core\", \"web\"]]}")]
     pub rules: Option<String>,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct AnalyzeMetricsArgs {
+    #[schemars(description = "Root directory of the Rust project to analyze metrics")]
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct AnalyzeDepsArgs {
+    #[schemars(description = "Root directory of the project to analyze dependencies")]
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct DetectArchPatternArgs {
+    #[schemars(description = "Root directory of the project to detect its architectural pattern")]
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct BlastRadiusArgs {
+    #[schemars(description = "Root directory of the project")]
+    pub path: String,
+    #[schemars(description = "Optional: Target symbol (function name) to analyze")]
+    pub target_symbol: Option<String>,
+    #[schemars(description = "Optional: Target file path to analyze")]
+    pub target_file: Option<String>,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct FindDeadCodeArgs {
+    #[schemars(description = "Root directory of the project to find dead code")]
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct SummarizeProjectArgs {
+    #[schemars(description = "Root directory of the project to summarize")]
+    pub path: String,
 }
 
 pub struct ArchitectTools {
@@ -116,50 +158,165 @@ impl ArchitectTools {
         Parameters(args): Parameters<ImpactAnalysisArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let impacted = self.state.get_impact_analysis(&args.function_name);
+        let root_opt = self.state.last_root.lock().unwrap().clone();
+        let root = root_opt.as_deref().unwrap_or(Path::new("."));
+        let result = self.state.get_blast_radius(root, Some(args.function_name), None);
         
-        let result = json!({
-            "function": args.function_name,
-            "impacted_callers": impacted,
-            "total_impacted": impacted.len()
-        });
-
         Ok(Json(result.to_string()))
     }
 
-    #[tool(name = "lint_architecture", description = "Checks for architectural violations like circular dependencies or layer violations.")]
+    #[tool(name = "analyze_blast_radius", description = "Comprehensive impact analysis across symbols and file dependencies.")]
+    pub async fn analyze_blast_radius(
+        &self,
+        Parameters(args): Parameters<BlastRadiusArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.get_blast_radius(root, args.target_symbol, args.target_file);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "find_dead_code", description = "Finds functions/symbols that are defined but never used within the workspace.")]
+    pub async fn find_dead_code(
+        &self,
+        Parameters(args): Parameters<FindDeadCodeArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.find_dead_code(root);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "summarize_project_structure", description = "Provides a high-level summary of the project, including language distribution, entry points, and top-level modules.")]
+    pub async fn summarize_project_structure(
+        &self,
+        Parameters(args): Parameters<SummarizeProjectArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.summarize_project_structure(root);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "lint_architecture", description = "Checks for architectural violations like circular dependencies or layer violations across the workspace.")]
     pub async fn lint_architecture(
         &self,
         Parameters(args): Parameters<ArchLintArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let calls = self.state.cached_calls.lock().unwrap();
-        let mut violations = Vec::new();
-
-        // 1. Basic Circular Dependency Detection (Direct recursion for now)
-        for call in calls.iter() {
-            if let Some(ref caller) = call.caller_name {
-                if caller == &call.callee_name {
-                    violations.push(json!({
-                        "type": "Direct recursion",
-                        "function": caller,
-                        "file": call.caller_file.display().to_string()
-                    }));
-                }
-            }
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
         }
 
-        // 2. Layer Violation (Example: core should not depend on server)
-        // This is a placeholder for the DSL/Rules logic
-        if let Some(rules_str) = args.rules {
-             // In a real implementation, parse JSON rules and check
-             violations.push(json!({"info": "Custom rules parsing not fully implemented", "rules_received": rules_str}));
+        let result = self.state.lint_architecture(root, args.rules);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "analyze_metrics", description = "Calculates cyclomatic complexity and line counts for functions in the workspace.")]
+    pub async fn analyze_metrics(
+        &self,
+        Parameters(args): Parameters<AnalyzeMetricsArgs>,
+        context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
         }
 
-        let result = json!({
-            "status": if violations.is_empty() { "pass" } else { "fail" },
-            "violations": violations
-        });
+        if let Some(token) = context.meta.get_progress_token() {
+            let _ = context.peer.notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 0.2,
+                total: Some(1.0),
+                message: Some("Calculating metrics...".to_string()),
+            }).await;
+        }
+
+        let metrics = self.state.get_metrics(root);
+
+        if let Some(token) = context.meta.get_progress_token() {
+            let _ = context.peer.notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 1.0,
+                total: Some(1.0),
+                message: Some("Metrics calculation complete".to_string()),
+            }).await;
+        }
+
+        Ok(Json(metrics.to_string()))
+    }
+
+    #[tool(name = "analyze_dependencies", description = "Analyzes imports and dependencies between files across the workspace.")]
+    pub async fn analyze_dependencies(
+        &self,
+        Parameters(args): Parameters<AnalyzeDepsArgs>,
+        context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        if let Some(token) = context.meta.get_progress_token() {
+            let _ = context.peer.notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 0.3,
+                total: Some(1.0),
+                message: Some("Analyzing dependencies...".to_string()),
+            }).await;
+        }
+
+        let deps = self.state.get_dependencies(root);
+
+        if let Some(token) = context.meta.get_progress_token() {
+            let _ = context.peer.notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 1.0,
+                total: Some(1.0),
+                message: Some("Dependency analysis complete".to_string()),
+            }).await;
+        }
+
+        Ok(Json(deps.to_string()))
+    }
+
+    #[tool(name = "detect_architecture_pattern", description = "Infers the architectural pattern of the project based on folder names.")]
+    pub async fn detect_architecture_pattern(
+        &self,
+        Parameters(args): Parameters<DetectArchPatternArgs>,
+        context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        if let Some(token) = context.meta.get_progress_token() {
+            let _ = context.peer.notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 0.1,
+                total: Some(1.0),
+                message: Some("Scanning folders for patterns...".to_string()),
+            }).await;
+        }
+
+        let result = self.state.detect_architecture_pattern(root);
 
         Ok(Json(result.to_string()))
     }
@@ -181,7 +338,7 @@ impl ArchitectTools {
         let target = args.function_name.unwrap_or_else(|| "the whole workspace".to_string());
         
         let sampling_msg = SamplingMessage::user_text(format!(
-            "다음은 현재 프로젝트의 Call Graph 기반 코드 맵 요약입니다:\n{}\n\n'{}'에 대해 아키텍처 관점에서의 리팩토링 제안을 해주세요. 특히 결합도(Coupling)와 응집도(Cohesion)를 개선할 수 있는 방안을 구체적으로 알려주세요.",
+            "The following is a code map summary based on the Call Graph of the current project:\n{}\n\nPlease provide refactoring suggestions for '{}' from an architectural perspective. Specifically, suggest ways to improve coupling and cohesion.",
             summary_text, target
         ));
 
@@ -193,7 +350,7 @@ impl ArchitectTools {
         let ai_suggestion = sampling_result.message.content.first()
             .and_then(|c| c.as_text())
             .map(|t| t.text.clone())
-            .unwrap_or_else(|| "AI로부터 응답을 받지 못했습니다.".to_string());
+            .unwrap_or_else(|| "Failed to receive a response from the AI.".to_string());
 
         Ok(Json(ai_suggestion))
     }

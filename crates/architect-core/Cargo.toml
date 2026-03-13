@@ -13,5 +13,16 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tree-sitter = "0.22"
 tree-sitter-rust = "0.21"
+tree-sitter-python = "0.21"
+tree-sitter-javascript = "0.21"
+tree-sitter-typescript = "0.21"
+tree-sitter-go = "0.21"
+tree-sitter-c = "0.21"
+tree-sitter-cpp = "0.22"
+tree-sitter-java = "0.21"
+tree-sitter-ruby = "0.21"
+tree-sitter-php = "0.23"
+tree-sitter-kotlin = "0.3"
 walkdir = "2.5"
+rayon = "1.10"
 rmcp = { workspace = true }

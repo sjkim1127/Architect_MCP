@@ -28,15 +28,14 @@ impl ArchitectPrompts {
             PromptMessage::new_text(
                 PromptMessageRole::User,
                 format!(
-                    "당신은 Senior Software Architect입니다. 다음 함수 '{}'의 구현과 의존성 관계를 분석하여,\n\
-                    구조적 결함(Tight Coupling, Violation of Single Responsibility 등)이 있는지 리뷰해 주세요.\n\n\
-                    분석을 위해 다음 도구들을 적절히 활용해 주십시오:\n\
-                    1. `analyze_call_graph`: 전체적인 함수 호출 구조 파악\n\
-                    2. `analyze_impact`: 해당 함수 수정 시 영향을 받는 다른 함수들 확인\n\
-                    3. `lint_architecture`: 순환 참조 등 구조적 위반 사항 체크\n\
-                    4. `architect://metrics/debt`: 복잡도 및 기술 부채 확인\n\
-                    5. `architect://visual/mermaid`: 호출 관계 시각화\n\n\
-                    위 정보를 바탕으로 구체적인 개선안을 제시해 주십시오.",
+                    "You are a Senior Software Architect. Review the implementation and dependencies of the function '{}' to identify structural flaws such as Tight Coupling or Violation of Single Responsibility.\n\n\
+                    Please utilize the following tools for your analysis:\n\
+                    1. `analyze_call_graph`: Understand the overall function call structure\n\
+                    2. `analyze_impact`: Identify other functions affected by modifying this function\n\
+                    3. `lint_architecture`: Check for structural violations like circular references\n\
+                    4. `architect://metrics/debt`: Check complexity and technical debt\n\
+                    5. `architect://visual/mermaid`: Visualize the call relationship\n\n\
+                    Based on this information, provide specific improvement suggestions.",
                     args.function_name
                 )
             )
