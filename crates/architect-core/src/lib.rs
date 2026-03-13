@@ -509,3 +509,34 @@ impl SharedState {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_language_registry() {
+        let state = SharedState::new();
+        assert!(state.registry.get_provider("rs").is_some());
+        assert!(state.registry.get_provider("py").is_some());
+        assert!(state.registry.get_provider("js").is_some());
+        assert!(state.registry.get_provider("java").is_some());
+        assert!(state.registry.get_provider("unknown").is_none());
+    }
+
+    #[test]
+    fn test_metrics_analyzer() {
+        let state = SharedState::new();
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("main.rs");
+        fs::write(&file_path, "fn main() { if true { println!(\"hello\"); } }").unwrap();
+
+        let metrics = state.get_metrics(dir.path());
+        assert!(metrics.as_array().unwrap().len() > 0);
+        let first = &metrics.as_array().unwrap()[0];
+        assert_eq!(first["function"], "main");
+        assert_eq!(first["cyclomatic_complexity"], 2); // 1 (base) + 1 (if)
+    }
+}

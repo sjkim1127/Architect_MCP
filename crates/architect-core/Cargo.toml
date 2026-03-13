@@ -26,4 +26,5 @@ tree-sitter-kotlin = "0.3"
 walkdir = "2.5"
 ignore = "0.4"
 rayon = "1.10"
+tempfile = "3.10"
 rmcp = { workspace = true }
