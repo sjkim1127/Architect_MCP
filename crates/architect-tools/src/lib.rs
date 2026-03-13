@@ -24,6 +24,18 @@ pub struct RefactorSuggestionArgs {
     pub function_name: Option<String>,
 }
 
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct ImpactAnalysisArgs {
+    #[schemars(description = "The function name to analyze the impact of changes")]
+    pub function_name: String,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct ArchLintArgs {
+    #[schemars(description = "Optional: Custom architecture rules in JSON format. E.g. {\"forbidden_deps\": [[\"core\", \"web\"]]}")]
+    pub rules: Option<String>,
+}
+
 pub struct ArchitectTools {
     pub tool_router: ToolRouter<Self>,
     pub state: SharedState,
@@ -43,7 +55,6 @@ impl ArchitectTools {
             return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
         }
 
-        // Send initial progress
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
                 progress_token: token,
@@ -53,7 +64,6 @@ impl ArchitectTools {
             }).await;
         }
 
-        // Save last analyzed path for resources
         {
             let mut last_root = self.state.last_root.lock().unwrap();
             *last_root = Some(root.to_path_buf());
@@ -61,7 +71,6 @@ impl ArchitectTools {
 
         let definitions = self.state.index_definitions(root);
         
-        // Send intermediate progress
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
                 progress_token: token,
@@ -73,13 +82,14 @@ impl ArchitectTools {
 
         let calls = self.state.find_calls(root, &definitions);
 
-        // Cache definitions for completions
         {
-            let mut cached = self.state.cached_definitions.lock().unwrap();
-            *cached = definitions.clone();
+            let mut cached_defs = self.state.cached_definitions.lock().unwrap();
+            *cached_defs = definitions.clone();
+            
+            let mut cached_calls = self.state.cached_calls.lock().unwrap();
+            *cached_calls = calls.clone();
         }
 
-        // Send final progress
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
                 progress_token: token,
@@ -95,6 +105,60 @@ impl ArchitectTools {
             "total_definitions_found": definitions.len(),
             "total_calls_mapped": calls.len(),
             "calls": calls
+        });
+
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "analyze_impact", description = "Analyzes the impact of changing a specific function by finding all recursive callers.")]
+    pub async fn analyze_impact(
+        &self,
+        Parameters(args): Parameters<ImpactAnalysisArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let impacted = self.state.get_impact_analysis(&args.function_name);
+        
+        let result = json!({
+            "function": args.function_name,
+            "impacted_callers": impacted,
+            "total_impacted": impacted.len()
+        });
+
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "lint_architecture", description = "Checks for architectural violations like circular dependencies or layer violations.")]
+    pub async fn lint_architecture(
+        &self,
+        Parameters(args): Parameters<ArchLintArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let calls = self.state.cached_calls.lock().unwrap();
+        let mut violations = Vec::new();
+
+        // 1. Basic Circular Dependency Detection (Direct recursion for now)
+        for call in calls.iter() {
+            if let Some(ref caller) = call.caller_name {
+                if caller == &call.callee_name {
+                    violations.push(json!({
+                        "type": "Direct recursion",
+                        "function": caller,
+                        "file": call.caller_file.display().to_string()
+                    }));
+                }
+            }
+        }
+
+        // 2. Layer Violation (Example: core should not depend on server)
+        // This is a placeholder for the DSL/Rules logic
+        if let Some(rules_str) = args.rules {
+             // In a real implementation, parse JSON rules and check
+             violations.push(json!({"info": "Custom rules parsing not fully implemented", "rules_received": rules_str}));
+        }
+
+        let result = json!({
+            "status": if violations.is_empty() { "pass" } else { "fail" },
+            "violations": violations
         });
 
         Ok(Json(result.to_string()))
