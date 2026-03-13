@@ -10,7 +10,7 @@ use rmcp::{
 use architect_core::SharedState;
 use serde::Deserialize;
 use serde_json::json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
 pub struct CallGraphArgs {
@@ -97,11 +97,7 @@ impl ArchitectTools {
         Parameters(args): Parameters<CallGraphArgs>,
         context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
 
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
@@ -114,22 +110,18 @@ impl ArchitectTools {
 
         {
             if let Ok(mut last_root) = self.state.last_root.write() {
-                *last_root = Some(root.to_path_buf());
+                *last_root = Some(root.clone());
             }
         }
 
-        let definitions = self.state.index_definitions(root);
+        let state = self.state.clone();
+        let root_for_task = root.clone();
         
-        if let Some(token) = context.meta.get_progress_token() {
-            let _ = context.peer.notify_progress(ProgressNotificationParam {
-                progress_token: token,
-                progress: 0.5,
-                total: Some(1.0),
-                message: Some("Building call graph...".to_string()),
-            }).await;
-        }
-
-        let calls = self.state.find_calls(root, &definitions);
+        let (definitions, calls) = tokio::task::spawn_blocking(move || {
+            let defs = state.index_definitions(&root_for_task);
+            let cls = state.find_calls(&root_for_task, &defs);
+            (defs, cls)
+        }).await.map_err(|e| ErrorData::internal_error(format!("Blocking task failed: {}", e), None))?;
 
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
@@ -158,8 +150,14 @@ impl ArchitectTools {
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
         let root_opt = self.state.last_root.read().map(|guard| guard.clone()).unwrap_or(None);
-        let root = root_opt.as_deref().unwrap_or(Path::new("."));
-        let result = self.state.get_blast_radius(root, Some(args.function_name), None);
+        let root = root_opt.unwrap_or_else(|| PathBuf::from("."));
+        
+        let state = self.state.clone();
+        let function_name = args.function_name.clone();
+        
+        let result = tokio::task::spawn_blocking(move || {
+            state.get_blast_radius(&root, Some(function_name), None)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         
         Ok(Json(result.to_string()))
     }
@@ -170,12 +168,15 @@ impl ArchitectTools {
         Parameters(args): Parameters<BlastRadiusArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
+        let target_symbol = args.target_symbol.clone();
+        let target_file = args.target_file.clone();
 
-        let result = self.state.get_blast_radius(root, args.target_symbol, args.target_file);
+        let result = tokio::task::spawn_blocking(move || {
+            state.get_blast_radius(&root, target_symbol, target_file)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -185,12 +186,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<FindDeadCodeArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.find_dead_code(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.find_dead_code(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -200,12 +202,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<SummarizeProjectArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.summarize_project_structure(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.summarize_project_structure(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -215,12 +218,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<GenericPathArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.scan_security_hotspots(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.scan_security_hotspots(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -230,12 +234,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<GenericPathArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.extract_api_endpoints(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.extract_api_endpoints(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -245,12 +250,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<GenericPathArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.analyze_external_coupling(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.analyze_external_coupling(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -260,12 +266,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<GenericPathArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.analyze_test_gap(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.analyze_test_gap(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -275,12 +282,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<GenericPathArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.analyze_outbound_calls(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.analyze_outbound_calls(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -290,12 +298,13 @@ impl ArchitectTools {
         Parameters(args): Parameters<GenericPathArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
 
-        let result = self.state.audit_error_handling(root);
+        let result = tokio::task::spawn_blocking(move || {
+            state.audit_error_handling(&root)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -305,12 +314,14 @@ impl ArchitectTools {
         Parameters(args): Parameters<ArchLintArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
+        let state = self.state.clone();
+        let rules = args.rules.clone();
 
-        let result = self.state.lint_architecture(root, args.rules);
+        let result = tokio::task::spawn_blocking(move || {
+            state.lint_architecture(&root, rules)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
         Ok(Json(result.to_string()))
     }
 
@@ -320,11 +331,7 @@ impl ArchitectTools {
         Parameters(args): Parameters<AnalyzeMetricsArgs>,
         context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root = Path::new(&args.path);
-
-        if !root.exists() {
-            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
-        }
+        let root = self.validate_path(&args.path)?;
 
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
@@ -335,7 +342,11 @@ impl ArchitectTools {
             }).await;
         }
 
-        let metrics = self.state.get_metrics(root);
+        let state = self.state.clone();
+        let root_for_task = root.clone();
+        let metrics = tokio::task::spawn_blocking(move || {
+            state.get_metrics(&root_for_task)
+        }).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
         if let Some(token) = context.meta.get_progress_token() {
             let _ = context.peer.notify_progress(ProgressNotificationParam {
@@ -468,5 +479,14 @@ impl ArchitectTools {
             tool_router: Self::tool_router(),
             state,
         }
+    }
+
+    /// DRY: 경로 유효성 검사 및 PathBuf 반환을 위한 헬퍼
+    fn validate_path(&self, path_str: &str) -> Result<PathBuf, ErrorData> {
+        let root = Path::new(path_str);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", path_str), None));
+        }
+        Ok(root.to_path_buf())
     }
 }

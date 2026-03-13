@@ -78,12 +78,16 @@ impl ServerHandler for ArchitectServer {
             let root_opt = self.state.last_root.read().map(|g| g.clone()).unwrap_or(None);
             
             if let Some(root) = root_opt {
-                let cache = self.state.workspace_cache.read().map(|g| g.clone()).unwrap_or_default();
-                if let Some(ws_state) = cache.get(&root) {
-                    for name in ws_state.cached_definitions.keys() {
-                        if name.to_lowercase().contains(&value) {
-                            completions.push(name.clone());
-                        }
+                // 최적화: 락을 짧게 유지하기 위해 키 목록만 빠르게 복제하여 가져옴
+                let keys: Vec<String> = {
+                    let cache = self.state.workspace_cache.read().map(|g| g.clone()).unwrap_or_default();
+                    cache.get(&root).map(|ws| ws.cached_definitions.keys().cloned().collect()).unwrap_or_default()
+                };
+
+                // 락이 해제된 상태에서 무거운 필터링 작업 수행
+                for name in keys {
+                    if name.to_lowercase().contains(&value) {
+                        completions.push(name);
                     }
                 }
             }

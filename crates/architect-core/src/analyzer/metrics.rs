@@ -2,25 +2,33 @@ use std::path::Path;
 use serde_json::{Value, json};
 use tree_sitter::{Parser, Node};
 use crate::languages::LanguageProvider;
+use std::cell::RefCell;
+
+thread_local! {
+    static PARSER: RefCell<Parser> = RefCell::new(Parser::new());
+}
 
 pub struct MetricsAnalyzer;
 
 impl MetricsAnalyzer {
     pub fn analyze(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Vec<Value> {
-        let mut parser = Parser::new();
-        if let Err(e) = parser.set_language(&provider.language()) {
-            tracing::error!("Error loading grammar for {:?}: {}", path, e);
-            return Vec::new();
-        }
-        
-        let tree = match parser.parse(content, None) {
-            Some(t) => t,
-            None => return Vec::new(),
-        };
-        let mut cursor = tree.walk();
-        let mut results = Vec::new();
-        
-        self.traverse_for_metrics(&mut cursor, content, path, &mut results, provider);
+        let results = PARSER.with(|parser_cell| {
+            let mut parser = parser_cell.borrow_mut();
+            if let Err(e) = parser.set_language(&provider.language()) {
+                tracing::error!("Error loading grammar for {:?}: {}", path, e);
+                return Vec::new();
+            }
+            
+            let tree = match parser.parse(content, None) {
+                Some(t) => t,
+                None => return Vec::new(),
+            };
+            let mut cursor = tree.walk();
+            let mut results = Vec::new();
+            
+            self.traverse_for_metrics(&mut cursor, content, path, &mut results, provider);
+            results
+        });
         results
     }
 

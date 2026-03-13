@@ -2,42 +2,49 @@ use std::path::Path;
 use serde_json::{Value, json};
 use tree_sitter::{Parser, Query, QueryCursor};
 use crate::languages::LanguageProvider;
+use std::cell::RefCell;
+
+thread_local! {
+    static PARSER: RefCell<Parser> = RefCell::new(Parser::new());
+}
 
 pub struct ErrorAuditAnalyzer;
 
 impl ErrorAuditAnalyzer {
     pub fn analyze(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Vec<Value> {
-        let mut parser = Parser::new();
-        let lang = provider.language();
-        if let Err(_) = parser.set_language(&lang) {
-            return Vec::new();
-        }
+        PARSER.with(|parser_cell| {
+            let mut parser = parser_cell.borrow_mut();
+            let lang = provider.language();
+            if let Err(_) = parser.set_language(&lang) {
+                return Vec::new();
+            }
 
-        let tree = match parser.parse(content, None) {
-            Some(t) => t,
-            None => return Vec::new(),
-        };
+            let tree = match parser.parse(content, None) {
+                Some(t) => t,
+                None => return Vec::new(),
+            };
 
-        let mut results = Vec::new();
-        if let Ok(query) = Query::new(&lang, provider.error_query()) {
-            let mut cursor = QueryCursor::new();
-            let matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
+            let mut results = Vec::new();
+            if let Ok(query) = Query::new(&lang, provider.error_query()) {
+                let mut cursor = QueryCursor::new();
+                let matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
 
-            for m in matches {
-                for capture in m.captures {
-                    let name = &content[capture.node.byte_range()];
-                    let start_pos = capture.node.start_position();
-                    
-                    results.push(json!({
-                        "issue": "Error Handling Anti-pattern",
-                        "location": name,
-                        "file": path.display().to_string(),
-                        "line": start_pos.row + 1,
-                        "description": "Found empty catch/except block or excessive panic-prone call (.unwrap/.expect)."
-                    }));
+                for m in matches {
+                    for capture in m.captures {
+                        let name = &content[capture.node.byte_range()];
+                        let start_pos = capture.node.start_position();
+                        
+                        results.push(json!({
+                            "issue": "Error Handling Anti-pattern",
+                            "location": name,
+                            "file": path.display().to_string(),
+                            "line": start_pos.row + 1,
+                            "description": "Found empty catch/except block or excessive panic-prone call (.unwrap/.expect)."
+                        }));
+                    }
                 }
             }
-        }
-        results
+            results
+        })
     }
 }
