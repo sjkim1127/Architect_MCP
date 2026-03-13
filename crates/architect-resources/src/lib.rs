@@ -44,7 +44,7 @@ impl ArchitectResources {
         &self,
         request: ReadResourceRequestParams,
     ) -> Result<ReadResourceResult, ErrorData> {
-        let root_opt = self.state.last_root.lock().map(|guard| guard.clone()).unwrap_or(None);
+        let root_opt = self.state.last_root.read().map(|guard| guard.clone()).unwrap_or(None);
 
         match request.uri.as_str() {
             "architect://call-graph/summary" => {

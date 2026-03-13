@@ -113,7 +113,7 @@ impl ArchitectTools {
         }
 
         {
-            if let Ok(mut last_root) = self.state.last_root.lock() {
+            if let Ok(mut last_root) = self.state.last_root.write() {
                 *last_root = Some(root.to_path_buf());
             }
         }
@@ -157,7 +157,7 @@ impl ArchitectTools {
         Parameters(args): Parameters<ImpactAnalysisArgs>,
         _context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root_opt = self.state.last_root.lock().map(|guard| guard.clone()).unwrap_or(None);
+        let root_opt = self.state.last_root.read().map(|guard| guard.clone()).unwrap_or(None);
         let root = root_opt.as_deref().unwrap_or(Path::new("."));
         let result = self.state.get_blast_radius(root, Some(args.function_name), None);
         
@@ -416,7 +416,7 @@ impl ArchitectTools {
         Parameters(args): Parameters<RefactorSuggestionArgs>,
         context: RequestContext<RoleServer>
     ) -> Result<Json<String>, ErrorData> {
-        let root_opt = self.state.last_root.lock().map(|guard| guard.clone()).unwrap_or(None);
+        let root_opt = self.state.last_root.read().map(|guard| guard.clone()).unwrap_or(None);
         let summary_text = if let Some(root) = root_opt {
              let definitions = self.state.index_definitions(&root);
              

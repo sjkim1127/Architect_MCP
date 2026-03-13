@@ -2,9 +2,10 @@ use architect_types::{FnDefinition, CallInfo};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock}; // Mutex 대신 RwLock 도입
 use ignore::WalkBuilder;
 use rayon::prelude::*;
+use anyhow::{Result, Context};
 
 pub mod languages;
 pub mod analyzer;
@@ -24,35 +25,31 @@ pub struct WorkspaceState {
 
 #[derive(Clone)]
 pub struct SharedState {
-    pub last_root: Arc<Mutex<Option<PathBuf>>>,
-    pub workspace_cache: Arc<Mutex<HashMap<PathBuf, WorkspaceState>>>,
+    pub last_root: Arc<RwLock<Option<PathBuf>>>,
+    pub workspace_cache: Arc<RwLock<HashMap<PathBuf, WorkspaceState>>>,
     pub registry: Arc<LanguageRegistry>,
 }
 
 impl SharedState {
     pub fn new() -> Self {
         Self {
-            last_root: Arc::new(Mutex::new(None)),
-            workspace_cache: Arc::new(Mutex::new(HashMap::new())),
+            last_root: Arc::new(RwLock::new(None)),
+            workspace_cache: Arc::new(RwLock::new(HashMap::new())),
             registry: Arc::new(LanguageRegistry::new()),
         }
     }
 
     fn get_files(&self, root: &Path) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        for entry in WalkBuilder::new(root)
+        WalkBuilder::new(root)
             .hidden(true)
             .git_ignore(true)
             .build()
-            .filter_map(|e| e.ok()) {
-            if entry.file_type().map_or(false, |ft| ft.is_file()) {
-                files.push(entry.path().to_path_buf());
-            }
-        }
-        files
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map_or(false, |ft| ft.is_file()))
+            .map(|e| e.path().to_path_buf())
+            .collect()
     }
 
-    /// DRY: 병렬 파일 처리를 위한 공통 헬퍼 메서드
     fn process_files_parallel<F, R>(&self, root: &Path, f: F) -> Vec<R> 
     where 
         F: Fn(&Path, &str, &dyn LanguageProvider) -> R + Sync + Send,
@@ -83,8 +80,7 @@ impl SharedState {
             }
         }
 
-        // 워크스페이스별 캐시에 저장
-        if let Ok(mut cache) = self.workspace_cache.lock() {
+        if let Ok(mut cache) = self.workspace_cache.write() {
             cache.entry(root.to_path_buf()).or_default().cached_definitions = definitions.clone();
         }
 
@@ -99,8 +95,7 @@ impl SharedState {
 
         let calls: Vec<CallInfo> = all_calls.into_iter().flatten().collect();
 
-        // 워크스페이스별 캐시에 저장
-        if let Ok(mut cache) = self.workspace_cache.lock() {
+        if let Ok(mut cache) = self.workspace_cache.write() {
             cache.entry(root.to_path_buf()).or_default().cached_calls = calls.clone();
         }
 
@@ -258,7 +253,10 @@ impl SharedState {
     }
 
     pub fn get_mermaid_diagram(&self, root: &Path) -> String {
-        let cache = self.workspace_cache.lock().unwrap();
+        let cache = match self.workspace_cache.read() {
+            Ok(c) => c,
+            Err(_) => return "graph TD;\n    Error[Lock Poisoned];".to_string(),
+        };
         let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
         
         let mut diagram = String::from("graph TD;\n");
@@ -277,13 +275,15 @@ impl SharedState {
     }
 
     pub fn get_blast_radius(&self, root: &Path, target_symbol: Option<String>, target_file: Option<String>) -> Value {
-        let cache = self.workspace_cache.lock().unwrap();
+        let cache = match self.workspace_cache.read() {
+            Ok(c) => c,
+            Err(_) => return json!({"error": "Lock poisoned"}),
+        };
         let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
         
         let mut impacted_symbols = Vec::new();
         let mut impacted_files = HashSet::new();
 
-        // 1. Symbol-level Impact (Call Graph)
         if let Some(symbol) = target_symbol {
             let mut to_visit: Vec<String> = vec![symbol];
             let mut visited = HashSet::new();
@@ -304,7 +304,6 @@ impl SharedState {
             }
         }
 
-        // 2. File-level Impact (Dependency Graph)
         let deps_value = self.get_dependencies(root);
         if let Some(target_path) = target_file {
             if let Some(deps_map) = deps_value.as_object() {
@@ -318,7 +317,6 @@ impl SharedState {
                     for (file, imports) in deps_map {
                         for import in imports.as_array().unwrap_or(&vec![]) {
                             let import_str = import.as_str().unwrap_or("");
-                            // 간단한 경로 매칭 (실제 구현에서는 모듈 해석 로직 필요)
                             if import_str.contains(&current_file) {
                                 impacted_files.insert(file.clone());
                                 to_visit.push(file.clone());
@@ -338,20 +336,13 @@ impl SharedState {
     }
 
     pub fn find_dead_code(&self, root: &Path) -> Value {
-        // 1. 모든 정의(Definitions) 수집
         let definitions = self.index_definitions(root);
-        
-        // 2. 모든 호출(Calls) 수집
         let calls = self.find_calls(root, &definitions);
-        
-        // 3. 호출된 대상 이름들 수집
         let called_names: HashSet<String> = calls.iter().map(|c| c.callee_name.clone()).collect();
         
         let mut dead_code = Vec::new();
 
-        // 4. 정의되었으나 호출되지 않은 것 필터링
         for (name, defs) in definitions {
-            // main이나 test 등 특수 목적 함수는 제외 (간단한 필터링)
             if name == "main" || name.contains("test") {
                 continue;
             }
@@ -375,11 +366,13 @@ impl SharedState {
 
     pub fn lint_architecture(&self, root: &Path, rules_json: Option<String>) -> Value {
         let mut violations = Vec::new();
-        let cache = self.workspace_cache.lock().unwrap();
+        let cache = match self.workspace_cache.read() {
+            Ok(c) => c,
+            Err(_) => return json!({"error": "Lock poisoned"}),
+        };
         let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
         let deps_value = self.get_dependencies(root);
 
-        // 1. 규칙 파싱 (예: {"forbidden_deps": [["core", "server"]]})
         let mut forbidden_deps = Vec::new();
         if let Some(json_str) = rules_json {
             if let Ok(v) = serde_json::from_str::<Value>(&json_str) {
@@ -397,7 +390,6 @@ impl SharedState {
             }
         }
 
-        // 2. 파일 의존성 레이어 위반 체크
         if let Some(deps_map) = deps_value.as_object() {
             for (file, imports) in deps_map {
                 for (from_layer, to_layer) in &forbidden_deps {
@@ -418,7 +410,6 @@ impl SharedState {
             }
         }
 
-        // 3. 호출 그래프 기반 레이어 위반 체크
         for call in calls.iter() {
             let caller_file = call.caller_file.display().to_string();
             for (from_layer, to_layer) in &forbidden_deps {
@@ -434,7 +425,6 @@ impl SharedState {
             }
         }
 
-        // 4. 순환 참조 체크 (단순 직접 순환 우선)
         for call in calls.iter() {
             if let Some(ref caller) = call.caller_name {
                 if caller == &call.callee_name {
@@ -465,7 +455,6 @@ impl SharedState {
             let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("unknown");
             *lang_counts.entry(ext.to_string()).or_insert(0) += 1;
 
-            // 잠재적 진입점 탐색 (main.rs, app.py, index.js 등)
             let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
             if file_name.starts_with("main.") || file_name.starts_with("app.") || file_name.starts_with("index.") || file_name == "lib.rs" {
                 entry_points.push(path.strip_prefix(root).unwrap_or(path).display().to_string());
@@ -482,14 +471,12 @@ impl SharedState {
             }));
         }
 
-        // 언어 비중순으로 정렬
         lang_distribution.sort_by(|a, b| {
             let a_val = a["file_count"].as_u64().unwrap_or(0);
             let b_val = b["file_count"].as_u64().unwrap_or(0);
             b_val.cmp(&a_val)
         });
 
-        // 상위 수준 모듈(폴더) 목록
         let mut top_modules = HashSet::new();
         for path in &files {
             if let Some(parent) = path.strip_prefix(root).ok().and_then(|p| p.components().next()) {
