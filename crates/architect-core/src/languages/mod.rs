@@ -8,6 +8,8 @@ pub trait LanguageProvider: Send + Sync {
     fn import_query(&self) -> &str;
     fn security_query(&self) -> &str;
     fn api_query(&self) -> &str;
+    fn outbound_query(&self) -> &str;
+    fn error_query(&self) -> &str;
     fn is_complexity_node(&self, kind: &str) -> bool;
 }
 
@@ -76,6 +78,12 @@ impl LanguageProvider for RustProvider {
     fn api_query(&self) -> &str {
         "(attribute (path) @attr_path (#match? @path \"get|post|put|delete|patch|route\")) @api"
     }
+    fn outbound_query(&self) -> &str {
+        "(call_expression function: (field_expression field: (field_identifier) @name (#match? @name \"get|post|put|delete|request|send\"))) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(call_expression function: (field_expression field: (field_identifier) @name (#match? @name \"unwrap|expect\"))) @error"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_expression" | "for_expression" | "while_expression" | "match_arm" | "&&" | "||")
     }
@@ -91,6 +99,12 @@ impl LanguageProvider for PythonProvider {
     }
     fn api_query(&self) -> &str {
         "(decorator (call function: (attribute object: (identifier) @obj attribute: (identifier) @name (#match? @name \"get|post|put|delete|route\")))) @api"
+    }
+    fn outbound_query(&self) -> &str {
+        "(call function: (attribute attribute: (identifier) @name (#match? @name \"get|post|put|delete|request|fetch\"))) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(except_clause (block (pass_statement))) @error_swallowed"
     }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "case_statement" | "and" | "or")
@@ -108,6 +122,12 @@ impl LanguageProvider for JsTsProvider {
     fn api_query(&self) -> &str {
         "(call_expression function: (member_expression property: (property_identifier) @name (#match? @name \"get|post|put|delete|use|route\"))) @api"
     }
+    fn outbound_query(&self) -> &str {
+        "(call_expression function: (identifier) @name (#match? @name \"fetch|axios\")) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(catch_clause (statement_block) @block (#match? @block \"^\\\\{\\\\s*\\\\}\")) @error_swallowed"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "switch_case" | "&&" | "||" | "conditional_expression")
     }
@@ -123,6 +143,12 @@ impl LanguageProvider for GoProvider {
     }
     fn api_query(&self) -> &str {
         "(call_expression function: (selector_expression field: (field_identifier) @name (#match? @name \"Get|Post|Put|Delete|Handle|HandleFunc\"))) @api"
+    }
+    fn outbound_query(&self) -> &str {
+        "(call_expression function: (selector_expression field: (field_identifier) @name (#match? @name \"Get|Post|Do|NewRequest\"))) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(if_statement condition: (binary_expression left: (identifier) @err (#eq? @err \"err\") right: (nil) @nil (#eq? @nil \"nil\")) consequence: (block)) @error_unchecked"
     }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "case_statement" | "&&" | "||")
@@ -140,6 +166,12 @@ impl LanguageProvider for CCppProvider {
     fn api_query(&self) -> &str {
         "(attribute (identifier) @name (#match? @name \"get|post|put|delete|route\")) @api"
     }
+    fn outbound_query(&self) -> &str {
+        "(call_expression function: (identifier) @name (#match? @name \"connect|send|sendto|write|curl_easy_perform\")) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(if_statement condition: (parenthesized_expression (binary_expression left: (identifier) @res right: (number_literal) @val (#eq? @val \"-1\")))) @error_unchecked"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "case_statement" | "&&" | "||" | "conditional_expression")
     }
@@ -155,6 +187,12 @@ impl LanguageProvider for JavaProvider {
     }
     fn api_query(&self) -> &str {
         "(annotation name: (identifier) @name (#match? @name \"GetMapping|PostMapping|PutMapping|DeleteMapping|RequestMapping\")) @api"
+    }
+    fn outbound_query(&self) -> &str {
+        "(method_invocation name: (identifier) @name (#match? @name \"send|execute|exchange|getForObject\")) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(catch_clause (block) @block (#match? @block \"^\\\\{\\\\s*\\\\}\")) @error_swallowed"
     }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "switch_label" | "&&" | "||" | "ternary_expression")
@@ -172,6 +210,12 @@ impl LanguageProvider for RubyProvider {
     fn api_query(&self) -> &str {
         "(call method: (identifier) @name (#match? @name \"get|post|put|delete|patch|resource\")) @api"
     }
+    fn outbound_query(&self) -> &str {
+        "(call method: (identifier) @name (#match? @name \"get|post|request|get_response\")) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(rescue (then (block (pass_statement)))) @error_swallowed"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if" | "unless" | "for" | "while" | "until" | "when" | "&&" | "||" | "and" | "or")
     }
@@ -188,6 +232,12 @@ impl LanguageProvider for PhpProvider {
     fn api_query(&self) -> &str {
         "(attribute (attribute_group_clause_list (attribute name: (name) @name (#match? @name \"Get|Post|Put|Delete|Route\")))) @api"
     }
+    fn outbound_query(&self) -> &str {
+        "(function_call_expression function: (name) @name (#match? @name \"curl_init|file_get_contents|get_headers\")) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(catch_clause (compound_statement) @block (#match? @block \"^\\\\{\\\\s*\\\\}\")) @error_swallowed"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "foreach_statement" | "while_statement" | "case_statement" | "&&" | "||" | "and" | "or" | "conditional_expression")
     }
@@ -203,6 +253,12 @@ impl LanguageProvider for KotlinProvider {
     }
     fn api_query(&self) -> &str {
         "(annotation (user_type (reference_expression (simple_identifier) @name (#match? @name \"GetMapping|PostMapping|PutMapping|DeleteMapping|Path\")))) @api"
+    }
+    fn outbound_query(&self) -> &str {
+        "(call_expression (user_type (reference_expression (simple_identifier) @name (#match? @name \"send|execute|exchange|getForObject\")))) @outbound"
+    }
+    fn error_query(&self) -> &str {
+        "(catch_clause (block) @block (#match? @block \"^\\\\{\\\\s*\\\\}\")) @error_swallowed"
     }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_expression" | "for_statement" | "while_statement" | "when_entry" | "&&" | "||")

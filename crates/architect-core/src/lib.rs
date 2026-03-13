@@ -12,7 +12,8 @@ pub mod analyzer;
 use languages::{LanguageRegistry, LanguageProvider};
 use analyzer::{
     MetricsAnalyzer, DependencyAnalyzer, SymbolAnalyzer, 
-    SecurityAnalyzer, ApiAnalyzer, ExternalCouplingAnalyzer
+    SecurityAnalyzer, ApiAnalyzer, ExternalCouplingAnalyzer,
+    OutboundCallsAnalyzer, ErrorAuditAnalyzer
 };
 
 #[derive(Default, Clone, Debug)]
@@ -190,6 +191,22 @@ impl SharedState {
             "total_risky_functions_without_tests": gaps.len(),
             "gaps": gaps
         })
+    }
+
+    pub fn analyze_outbound_calls(&self, root: &Path) -> Value {
+        let analyzer = OutboundCallsAnalyzer;
+        let results = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.analyze(path, content, provider)
+        });
+        json!(results.into_iter().flatten().collect::<Vec<_>>())
+    }
+
+    pub fn audit_error_handling(&self, root: &Path) -> Value {
+        let analyzer = ErrorAuditAnalyzer;
+        let results = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.analyze(path, content, provider)
+        });
+        json!(results.into_iter().flatten().collect::<Vec<_>>())
     }
 
     pub fn detect_architecture_pattern(&self, root: &Path) -> Value {

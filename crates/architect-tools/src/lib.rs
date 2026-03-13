@@ -269,6 +269,36 @@ impl ArchitectTools {
         Ok(Json(result.to_string()))
     }
 
+    #[tool(name = "analyze_outbound_calls", description = "Maps all external system interactions (HTTP/gRPC) across the workspace.")]
+    pub async fn analyze_outbound_calls(
+        &self,
+        Parameters(args): Parameters<GenericPathArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.analyze_outbound_calls(root);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "audit_error_handling", description = "Audits the codebase for error handling anti-patterns like swallowed exceptions or excessive panics.")]
+    pub async fn audit_error_handling(
+        &self,
+        Parameters(args): Parameters<GenericPathArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.audit_error_handling(root);
+        Ok(Json(result.to_string()))
+    }
+
     #[tool(name = "lint_architecture", description = "Checks for architectural violations like circular dependencies or layer violations across the workspace.")]
     pub async fn lint_architecture(
         &self,
