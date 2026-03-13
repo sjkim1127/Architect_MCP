@@ -6,6 +6,8 @@ pub trait LanguageProvider: Send + Sync {
     fn language(&self) -> Language;
     fn fn_query(&self) -> &str;
     fn import_query(&self) -> &str;
+    fn security_query(&self) -> &str;
+    fn api_query(&self) -> &str;
     fn is_complexity_node(&self, kind: &str) -> bool;
 }
 
@@ -68,6 +70,12 @@ impl LanguageProvider for RustProvider {
     fn language(&self) -> Language { tree_sitter_rust::language().into() }
     fn fn_query(&self) -> &str { "(function_item name: (identifier) @fn_name)" }
     fn import_query(&self) -> &str { "(use_declaration) @import" }
+    fn security_query(&self) -> &str { 
+        "(call_expression function: (identifier) @name (#match? @name \"eval|exec|system|panic|unsafe\")) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(attribute (path) @attr_path (#match? @path \"get|post|put|delete|patch|route\")) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_expression" | "for_expression" | "while_expression" | "match_arm" | "&&" | "||")
     }
@@ -78,6 +86,12 @@ impl LanguageProvider for PythonProvider {
     fn language(&self) -> Language { tree_sitter_python::language().into() }
     fn fn_query(&self) -> &str { "(function_definition name: (identifier) @fn_name)" }
     fn import_query(&self) -> &str { "(import_statement) @import (import_from_statement) @import" }
+    fn security_query(&self) -> &str { 
+        "(call function: (identifier) @name (#match? @name \"eval|exec|os\\\\.system|subprocess|pickle\")) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(decorator (call function: (attribute object: (identifier) @obj attribute: (identifier) @name (#match? @name \"get|post|put|delete|route\")))) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "case_statement" | "and" | "or")
     }
@@ -88,6 +102,12 @@ impl LanguageProvider for JsTsProvider {
     fn language(&self) -> Language { tree_sitter_typescript::language_typescript().into() }
     fn fn_query(&self) -> &str { "(function_declaration name: (identifier) @fn_name) (method_definition name: (property_identifier) @fn_name)" }
     fn import_query(&self) -> &str { "(import_statement) @import (call_expression function: (identifier) @require_call (#eq? @require_call \"require\")) @import" }
+    fn security_query(&self) -> &str { 
+        "(call_expression function: (identifier) @name (#match? @name \"eval|exec|child_process|fs\\\\.readSync\")) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(call_expression function: (member_expression property: (property_identifier) @name (#match? @name \"get|post|put|delete|use|route\"))) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "switch_case" | "&&" | "||" | "conditional_expression")
     }
@@ -98,6 +118,12 @@ impl LanguageProvider for GoProvider {
     fn language(&self) -> Language { tree_sitter_go::language().into() }
     fn fn_query(&self) -> &str { "(function_declaration name: (identifier) @fn_name) (method_declaration name: (field_identifier) @fn_name)" }
     fn import_query(&self) -> &str { "(import_declaration) @import" }
+    fn security_query(&self) -> &str { 
+        "(call_expression function: (selector_expression field: (field_identifier) @name (#match? @name \"Command|UnsafePointer|Panic\"))) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(call_expression function: (selector_expression field: (field_identifier) @name (#match? @name \"Get|Post|Put|Delete|Handle|HandleFunc\"))) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "case_statement" | "&&" | "||")
     }
@@ -108,6 +134,12 @@ impl LanguageProvider for CCppProvider {
     fn language(&self) -> Language { tree_sitter_cpp::language().into() } // C++ 파서로 통합 사용 가능
     fn fn_query(&self) -> &str { "(function_definition declarator: (function_declarator declarator: (identifier) @fn_name))" }
     fn import_query(&self) -> &str { "(preproc_include) @import" }
+    fn security_query(&self) -> &str { 
+        "(call_expression function: (identifier) @name (#match? @name \"system|exec|gets|strcpy|sprintf|scanf\")) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(attribute (identifier) @name (#match? @name \"get|post|put|delete|route\")) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "case_statement" | "&&" | "||" | "conditional_expression")
     }
@@ -118,6 +150,12 @@ impl LanguageProvider for JavaProvider {
     fn language(&self) -> Language { tree_sitter_java::language().into() }
     fn fn_query(&self) -> &str { "(method_declaration name: (identifier) @fn_name) (constructor_declaration name: (identifier) @fn_name)" }
     fn import_query(&self) -> &str { "(import_declaration) @import" }
+    fn security_query(&self) -> &str { 
+        "(method_invocation name: (identifier) @name (#match? @name \"exec|eval|System\\\\.exit|getRuntime\")) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(annotation name: (identifier) @name (#match? @name \"GetMapping|PostMapping|PutMapping|DeleteMapping|RequestMapping\")) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "while_statement" | "switch_label" | "&&" | "||" | "ternary_expression")
     }
@@ -128,6 +166,12 @@ impl LanguageProvider for RubyProvider {
     fn language(&self) -> Language { tree_sitter_ruby::language().into() }
     fn fn_query(&self) -> &str { "(method name: (identifier) @fn_name) (singleton_method name: (identifier) @fn_name)" }
     fn import_query(&self) -> &str { "(call method: (identifier) @require_call (#match? @require_call \"require|load\")) @import" }
+    fn security_query(&self) -> &str { 
+        "(call method: (identifier) @name (#match? @name \"eval|system|exec|exit\")) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(call method: (identifier) @name (#match? @name \"get|post|put|delete|patch|resource\")) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if" | "unless" | "for" | "while" | "until" | "when" | "&&" | "||" | "and" | "or")
     }
@@ -138,6 +182,12 @@ impl LanguageProvider for PhpProvider {
     fn language(&self) -> Language { tree_sitter_php::language_php().into() }
     fn fn_query(&self) -> &str { "(function_definition name: (name) @fn_name) (method_declaration name: (name) @fn_name)" }
     fn import_query(&self) -> &str { "(include_expression) @import (require_expression) @import (namespace_use_declaration) @import" }
+    fn security_query(&self) -> &str { 
+        "(function_call_expression function: (name) @name (#match? @name \"eval|exec|system|passthru|shell_exec\")) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(attribute (attribute_group_clause_list (attribute name: (name) @name (#match? @name \"Get|Post|Put|Delete|Route\")))) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_statement" | "for_statement" | "foreach_statement" | "while_statement" | "case_statement" | "&&" | "||" | "and" | "or" | "conditional_expression")
     }
@@ -148,6 +198,12 @@ impl LanguageProvider for KotlinProvider {
     fn language(&self) -> Language { tree_sitter_kotlin::language().into() }
     fn fn_query(&self) -> &str { "(function_declaration name: (simple_identifier) @fn_name)" }
     fn import_query(&self) -> &str { "(import_header) @import" }
+    fn security_query(&self) -> &str { 
+        "(call_expression (user_type (reference_expression (simple_identifier) @name (#match? @name \"eval|exec|panic|System\\\\.exit\")))) @security" 
+    }
+    fn api_query(&self) -> &str {
+        "(annotation (user_type (reference_expression (simple_identifier) @name (#match? @name \"GetMapping|PostMapping|PutMapping|DeleteMapping|Path\")))) @api"
+    }
     fn is_complexity_node(&self, kind: &str) -> bool {
         matches!(kind, "if_expression" | "for_statement" | "while_statement" | "when_entry" | "&&" | "||")
     }

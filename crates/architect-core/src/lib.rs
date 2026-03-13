@@ -10,7 +10,10 @@ pub mod languages;
 pub mod analyzer;
 
 use languages::{LanguageRegistry, LanguageProvider};
-use analyzer::{MetricsAnalyzer, DependencyAnalyzer, SymbolAnalyzer};
+use analyzer::{
+    MetricsAnalyzer, DependencyAnalyzer, SymbolAnalyzer, 
+    SecurityAnalyzer, ApiAnalyzer, ExternalCouplingAnalyzer
+};
 
 #[derive(Default, Clone, Debug)]
 pub struct WorkspaceState {
@@ -114,23 +117,79 @@ impl SharedState {
 
     pub fn get_dependencies(&self, root: &Path) -> Value {
         let analyzer = DependencyAnalyzer;
-        
+        let results = self.process_files_parallel(root, |path, content, provider| {
+            let imports = analyzer.analyze(path, content, provider);
+            if !imports.is_empty() {
+                let rel_path = path.strip_prefix(root).unwrap_or(path).display().to_string();
+                Some((rel_path, imports))
+            } else {
+                None
+            }
+        });
+
+        let all_deps: HashMap<String, Vec<String>> = results.into_iter().flatten().collect();
+        serde_json::to_value(all_deps).unwrap_or(Value::Null)
+    }
+
+    pub fn scan_security_hotspots(&self, root: &Path) -> Value {
+        let analyzer = SecurityAnalyzer;
+        let all_issues = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.analyze(path, content, provider)
+        });
+        json!(all_issues.into_iter().flatten().collect::<Vec<_>>())
+    }
+
+    pub fn extract_api_endpoints(&self, root: &Path) -> Value {
+        let analyzer = ApiAnalyzer;
+        let all_apis = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.analyze(path, content, provider)
+        });
+        json!(all_apis.into_iter().flatten().collect::<Vec<_>>())
+    }
+
+    pub fn analyze_external_coupling(&self, root: &Path) -> Value {
+        let analyzer = ExternalCouplingAnalyzer;
+        let results = self.process_files_parallel(root, |path, content, provider| {
+            analyzer.analyze(path, content, provider)
+        });
+        json!(results)
+    }
+
+    pub fn analyze_test_gap(&self, root: &Path) -> Value {
+        let metrics_value = self.get_metrics(root);
         let files = self.get_files(root);
-        let all_deps: HashMap<String, Vec<String>> = files.par_iter().filter_map(|path| {
-            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-            if let Some(provider) = self.registry.get_provider(ext) {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let imports = analyzer.analyze(path, &content, provider.as_ref());
-                    if !imports.is_empty() {
-                        let rel_path = path.strip_prefix(root).unwrap_or(path).display().to_string();
-                        return Some((rel_path, imports));
+        
+        let test_files: HashSet<String> = files.iter()
+            .map(|p| p.display().to_string())
+            .filter(|s| s.to_lowercase().contains("test") || s.to_lowercase().contains("spec"))
+            .collect();
+
+        let mut gaps = Vec::new();
+        if let Some(metrics) = metrics_value.as_array() {
+            for m in metrics {
+                let complexity = m["cyclomatic_complexity"].as_u64().unwrap_or(0);
+                let file = m["file"].as_str().unwrap_or("");
+                
+                if complexity >= 5 && !test_files.contains(file) {
+                    let file_name = Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    let has_test = test_files.iter().any(|t| t.contains(file_name));
+                    
+                    if !has_test {
+                        gaps.push(json!({
+                            "function": m["function"],
+                            "file": file,
+                            "complexity": complexity,
+                            "risk_level": if complexity > 10 { "High" } else { "Medium" }
+                        }));
                     }
                 }
             }
-            None
-        }).collect();
+        }
 
-        serde_json::to_value(all_deps).unwrap_or(Value::Null)
+        json!({
+            "total_risky_functions_without_tests": gaps.len(),
+            "gaps": gaps
+        })
     }
 
     pub fn detect_architecture_pattern(&self, root: &Path) -> Value {

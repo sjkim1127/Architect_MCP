@@ -78,6 +78,12 @@ pub struct SummarizeProjectArgs {
     pub path: String,
 }
 
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Default)]
+pub struct GenericPathArgs {
+    #[schemars(description = "Root directory of the project")]
+    pub path: String,
+}
+
 pub struct ArchitectTools {
     pub tool_router: ToolRouter<Self>,
     pub state: SharedState,
@@ -200,6 +206,66 @@ impl ArchitectTools {
         }
 
         let result = self.state.summarize_project_structure(root);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "scan_security_hotspots", description = "Scans for potentially dangerous patterns like eval(), system calls, or hardcoded secrets.")]
+    pub async fn scan_security_hotspots(
+        &self,
+        Parameters(args): Parameters<GenericPathArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.scan_security_hotspots(root);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "extract_api_endpoints", description = "Extracts API route definitions and endpoints using framework-specific patterns.")]
+    pub async fn extract_api_endpoints(
+        &self,
+        Parameters(args): Parameters<GenericPathArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.extract_api_endpoints(root);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "analyze_external_coupling", description = "Analyzes how deeply third-party libraries penetrate the internal codebase.")]
+    pub async fn analyze_external_coupling(
+        &self,
+        Parameters(args): Parameters<GenericPathArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.analyze_external_coupling(root);
+        Ok(Json(result.to_string()))
+    }
+
+    #[tool(name = "analyze_test_gap", description = "Identifies high-complexity functions that lack corresponding test files.")]
+    pub async fn analyze_test_gap(
+        &self,
+        Parameters(args): Parameters<GenericPathArgs>,
+        _context: RequestContext<RoleServer>
+    ) -> Result<Json<String>, ErrorData> {
+        let root = Path::new(&args.path);
+        if !root.exists() {
+            return Err(ErrorData::invalid_params(format!("Path {} does not exist", args.path), None));
+        }
+
+        let result = self.state.analyze_test_gap(root);
         Ok(Json(result.to_string()))
     }
 
