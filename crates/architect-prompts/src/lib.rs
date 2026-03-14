@@ -43,6 +43,44 @@ impl ArchitectPrompts {
             ),
         )])
     }
+
+    #[prompt(
+        name = "architect-refactor-suggestion",
+        description = "Analyzes high-complexity or dead code and suggests refactoring strategies"
+    )]
+    pub async fn refactor_suggestion(
+        &self,
+        _parameters: Parameters<()>,
+    ) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            "You are an expert Refactoring Consultant. Please analyze the following resources to identify 'Hell Functions' and 'Dead Code':\n\n\
+            1. `architect://metrics/debt`: To find functions with high cyclomatic complexity\n\
+            2. `architect://analysis/dead-code`: To find unused symbols that can be safely removed\n\
+            3. `architect://analysis/structure`: To understand the project's overall context\n\n\
+            Based on these reports, provide a prioritized list of refactoring tasks, explaining the benefits of each."
+                .to_string(),
+        )])
+    }
+
+    #[prompt(
+        name = "architect-security-audit",
+        description = "Guides the AI through a security-focused audit of the codebase"
+    )]
+    pub async fn security_audit(
+        &self,
+        _parameters: Parameters<()>,
+    ) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            "You are a Security Auditor. Perform a deep security review of the project by examining these specific resources:\n\n\
+            1. `architect://analysis/security`: Review the detected security hotspots\n\
+            2. `architect://analysis/api`: Examine API endpoints for potential input validation or authorization issues\n\
+            3. `architect://analysis/dead-code`: Check if 'dead' code contains sensitive logic or backdoors\n\n\
+            Categorize your findings by severity (Critical, High, Medium, Low) and provide remediation steps for each."
+                .to_string(),
+        )])
+    }
 }
 
 impl ArchitectPrompts {

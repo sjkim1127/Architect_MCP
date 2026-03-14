@@ -40,6 +40,22 @@ impl ArchitectResources {
                     )
                     .with_mime_type("application/json")
                     .no_annotation(),
+                RawResource::new("architect://analysis/dead-code", "Dead Code Analysis")
+                    .with_description("Identifies unused symbols and functions in the workspace")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+                RawResource::new("architect://analysis/structure", "Project Structure Summary")
+                    .with_description("Exposes language distribution and detected architectural patterns")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+                RawResource::new("architect://analysis/security", "Security Hotspots")
+                    .with_description("Identifies potentially dangerous code patterns")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+                RawResource::new("architect://analysis/api", "API Endpoints")
+                    .with_description("Exposes detected API endpoints in the workspace")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
             ],
             ..Default::default()
         })
@@ -87,6 +103,38 @@ impl ArchitectResources {
                     json!({ "error": "No workspace analyzed. Call 'analyze_call_graph' first." })
                 };
                 self.wrap_text_resource(request.uri, "application/json", metrics.to_string())
+            }
+            "architect://analysis/dead-code" => {
+                let dead_code = if let Some(root) = root_opt {
+                    self.state.find_dead_code(&root)
+                } else {
+                    json!({ "error": "No workspace analyzed. Call 'analyze_call_graph' first." })
+                };
+                self.wrap_text_resource(request.uri, "application/json", dead_code.to_string())
+            }
+            "architect://analysis/structure" => {
+                let structure = if let Some(root) = root_opt {
+                    self.state.summarize_project_structure(&root)
+                } else {
+                    json!({ "error": "No workspace analyzed. Call 'analyze_call_graph' first." })
+                };
+                self.wrap_text_resource(request.uri, "application/json", structure.to_string())
+            }
+            "architect://analysis/security" => {
+                let security = if let Some(root) = root_opt {
+                    self.state.scan_security_hotspots(&root)
+                } else {
+                    json!({ "error": "No workspace analyzed. Call 'analyze_call_graph' first." })
+                };
+                self.wrap_text_resource(request.uri, "application/json", security.to_string())
+            }
+            "architect://analysis/api" => {
+                let api = if let Some(root) = root_opt {
+                    self.state.extract_api_endpoints(&root)
+                } else {
+                    json!({ "error": "No workspace analyzed. Call 'analyze_call_graph' first." })
+                };
+                self.wrap_text_resource(request.uri, "application/json", api.to_string())
             }
             _ => Err(ErrorData::invalid_params("Unknown resource URI", None)),
         }
