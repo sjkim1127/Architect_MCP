@@ -44,10 +44,15 @@ impl ArchitectResources {
                     .with_description("Identifies unused symbols and functions in the workspace")
                     .with_mime_type("application/json")
                     .no_annotation(),
-                RawResource::new("architect://analysis/structure", "Project Structure Summary")
-                    .with_description("Exposes language distribution and detected architectural patterns")
-                    .with_mime_type("application/json")
-                    .no_annotation(),
+                RawResource::new(
+                    "architect://analysis/structure",
+                    "Project Structure Summary",
+                )
+                .with_description(
+                    "Exposes language distribution and detected architectural patterns",
+                )
+                .with_mime_type("application/json")
+                .no_annotation(),
                 RawResource::new("architect://analysis/security", "Security Hotspots")
                     .with_description("Identifies potentially dangerous code patterns")
                     .with_mime_type("application/json")

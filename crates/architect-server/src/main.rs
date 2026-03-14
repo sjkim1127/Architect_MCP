@@ -182,9 +182,9 @@ async fn main() -> anyhow::Result<()> {
 
         let router = axum::Router::new().nest_service("/", service);
         let tcp_listener = tokio::net::TcpListener::bind(addr).await?;
-        
+
         tracing::info!("SSE server listening on {}", addr);
-        
+
         axum::serve(tcp_listener, router)
             .with_graceful_shutdown(async move {
                 tokio::signal::ctrl_c().await.unwrap();
