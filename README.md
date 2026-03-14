@@ -102,12 +102,44 @@ graph TD;
    cargo build --release
    ```
 2. **Configure Client**:
-   Add to `claude_desktop_config.json`:
+   Add the configuration to your `claude_desktop_config.json`.
+
+   **📁 Configuration File Location:**
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+   **A. Local Binary (Recommended for speed)**
    ```json
    {
      "mcpServers": {
        "architect": {
-         "command": "/path/to/Architect_MCP/target/release/architect-server"
+         "command": "/absolute/path/to/Architect_MCP/target/release/architect-server",
+         "env": {
+           "RUST_LOG": "info"
+         }
+       }
+     }
+   }
+   ```
+
+   **B. Docker (Recommended for isolated environment)**
+   ```json
+   {
+     "mcpServers": {
+       "architect": {
+         "command": "docker",
+         "args": ["run", "-i", "--rm", "architect-mcp"]
+       }
+     }
+   }
+   ```
+
+   **C. Cloud / SSE (For remote deployment)**
+   ```json
+   {
+     "mcpServers": {
+       "architect": {
+         "url": "https://your-architect-mcp.fly.dev/sse"
        }
      }
    }
