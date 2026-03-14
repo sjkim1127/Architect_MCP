@@ -1,11 +1,11 @@
-use rmcp::{
-    model::{
-        ListResourcesResult, ReadResourceResult, RawResource, ResourceContents,
-        PaginatedRequestParams, ReadResourceRequestParams, AnnotateAble,
-    },
-    ErrorData,
-};
 use architect_core::SharedState;
+use rmcp::{
+    ErrorData,
+    model::{
+        AnnotateAble, ListResourcesResult, PaginatedRequestParams, RawResource,
+        ReadResourceRequestParams, ReadResourceResult, ResourceContents,
+    },
+};
 use serde_json::json;
 
 pub struct ArchitectResources {
@@ -27,12 +27,17 @@ impl ArchitectResources {
                     .with_description("Provides a summary of the most recently analyzed call graph")
                     .with_mime_type("application/json")
                     .no_annotation(),
-                RawResource::new("architect://visual/mermaid", "Architecture Visual Map (Mermaid)")
-                    .with_description("Generates a Mermaid.js diagram of the call graph")
-                    .with_mime_type("text/plain")
-                    .no_annotation(),
+                RawResource::new(
+                    "architect://visual/mermaid",
+                    "Architecture Visual Map (Mermaid)",
+                )
+                .with_description("Generates a Mermaid.js diagram of the call graph")
+                .with_mime_type("text/plain")
+                .no_annotation(),
                 RawResource::new("architect://metrics/debt", "Technical Debt & Metrics")
-                    .with_description("Calculates cyclomatic complexity and identifies 'Hell Functions'")
+                    .with_description(
+                        "Calculates cyclomatic complexity and identifies 'Hell Functions'",
+                    )
                     .with_mime_type("application/json")
                     .no_annotation(),
             ],
@@ -44,7 +49,12 @@ impl ArchitectResources {
         &self,
         request: ReadResourceRequestParams,
     ) -> Result<ReadResourceResult, ErrorData> {
-        let root_opt = self.state.last_root.read().map(|guard| guard.clone()).unwrap_or(None);
+        let root_opt = self
+            .state
+            .last_root
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or(None);
 
         match request.uri.as_str() {
             "architect://call-graph/summary" => {
@@ -54,9 +64,11 @@ impl ArchitectResources {
                         "workspace": root.display().to_string(),
                         "total_definitions": definitions.len(),
                         "definitions": definitions.keys().collect::<Vec<_>>()
-                    }).to_string()
+                    })
+                    .to_string()
                 } else {
-                    json!({ "error": "No workspace analyzed. Call 'analyze_call_graph' first." }).to_string()
+                    json!({ "error": "No workspace analyzed. Call 'analyze_call_graph' first." })
+                        .to_string()
                 };
                 self.wrap_text_resource(request.uri, "application/json", summary)
             }
@@ -80,12 +92,19 @@ impl ArchitectResources {
         }
     }
 
-    fn wrap_text_resource(&self, uri: String, mime_type: &str, text: String) -> Result<ReadResourceResult, ErrorData> {
-        Ok(ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
-            uri,
-            mime_type: Some(mime_type.to_string()),
-            text,
-            meta: None,
-        }]))
+    fn wrap_text_resource(
+        &self,
+        uri: String,
+        mime_type: &str,
+        text: String,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        Ok(ReadResourceResult::new(vec![
+            ResourceContents::TextResourceContents {
+                uri,
+                mime_type: Some(mime_type.to_string()),
+                text,
+                meta: None,
+            },
+        ]))
     }
 }

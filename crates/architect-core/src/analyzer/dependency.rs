@@ -1,7 +1,7 @@
-use std::path::Path;
-use tree_sitter::{Parser, Query, QueryCursor};
 use crate::languages::LanguageProvider;
 use std::cell::RefCell;
+use std::path::Path;
+use tree_sitter::{Parser, Query, QueryCursor};
 
 thread_local! {
     static PARSER: RefCell<Parser> = RefCell::new(Parser::new());
@@ -10,7 +10,12 @@ thread_local! {
 pub struct DependencyAnalyzer;
 
 impl DependencyAnalyzer {
-    pub fn analyze(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Vec<String> {
+    pub fn analyze(
+        &self,
+        path: &Path,
+        content: &str,
+        provider: &dyn LanguageProvider,
+    ) -> Vec<String> {
         PARSER.with(|parser_cell| {
             let mut parser = parser_cell.borrow_mut();
             let lang = provider.language();

@@ -1,9 +1,9 @@
+use crate::languages::LanguageProvider;
+use architect_types::{CallInfo, FnDefinition};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
 use tree_sitter::{Parser, Query, QueryCursor};
-use crate::languages::LanguageProvider;
-use architect_types::{FnDefinition, CallInfo};
-use std::collections::HashMap;
-use std::cell::RefCell;
 
 thread_local! {
     static PARSER: RefCell<Parser> = RefCell::new(Parser::new());
@@ -12,7 +12,12 @@ thread_local! {
 pub struct SymbolAnalyzer;
 
 impl SymbolAnalyzer {
-    pub fn index_definitions(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Vec<(String, FnDefinition)> {
+    pub fn index_definitions(
+        &self,
+        path: &Path,
+        content: &str,
+        provider: &dyn LanguageProvider,
+    ) -> Vec<(String, FnDefinition)> {
         PARSER.with(|parser_cell| {
             let mut parser = parser_cell.borrow_mut();
             let lang = provider.language();
@@ -43,11 +48,14 @@ impl SymbolAnalyzer {
                 for capture in m.captures {
                     let name = &content[capture.node.byte_range()];
                     let start_pos = capture.node.start_position();
-                    
-                    defs.push((name.to_string(), FnDefinition {
-                        file: path.to_path_buf(),
-                        line: start_pos.row + 1,
-                    }));
+
+                    defs.push((
+                        name.to_string(),
+                        FnDefinition {
+                            file: path.to_path_buf(),
+                            line: start_pos.row + 1,
+                        },
+                    ));
                 }
             }
             defs
@@ -55,11 +63,11 @@ impl SymbolAnalyzer {
     }
 
     pub fn find_calls(
-        &self, 
-        path: &Path, 
-        content: &str, 
-        provider: &dyn LanguageProvider, 
-        definitions: &HashMap<String, Vec<FnDefinition>>
+        &self,
+        path: &Path,
+        content: &str,
+        provider: &dyn LanguageProvider,
+        definitions: &HashMap<String, Vec<FnDefinition>>,
     ) -> Vec<CallInfo> {
         PARSER.with(|parser_cell| {
             let mut parser = parser_cell.borrow_mut();

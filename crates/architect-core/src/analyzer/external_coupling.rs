@@ -1,7 +1,7 @@
-use std::path::Path;
-use serde_json::{Value, json};
-use crate::languages::LanguageProvider;
 use crate::analyzer::DependencyAnalyzer;
+use crate::languages::LanguageProvider;
+use serde_json::{Value, json};
+use std::path::Path;
 
 pub struct ExternalCouplingAnalyzer;
 
@@ -9,7 +9,7 @@ impl ExternalCouplingAnalyzer {
     pub fn analyze(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Value {
         let dep_analyzer = DependencyAnalyzer;
         let imports = dep_analyzer.analyze(path, content, provider);
-        
+
         let mut internal_imports = 0;
         let mut external_imports = 0;
         let mut external_list = Vec::new();
@@ -25,7 +25,11 @@ impl ExternalCouplingAnalyzer {
         }
 
         let total = internal_imports + external_imports;
-        let penetration = if total > 0 { (external_imports as f32 / total as f32) * 100.0 } else { 0.0 };
+        let penetration = if total > 0 {
+            (external_imports as f32 / total as f32) * 100.0
+        } else {
+            0.0
+        };
 
         json!({
             "file": path.display().to_string(),

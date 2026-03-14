@@ -1,20 +1,18 @@
 use architect_core::SharedState;
-use architect_tools::ArchitectTools;
 use architect_prompts::ArchitectPrompts;
 use architect_resources::ArchitectResources;
+use architect_tools::ArchitectTools;
 use rmcp::{
-    ServerHandler, ServiceExt, transport::stdio,
+    ErrorData, ServerHandler, ServiceExt,
+    handler::server::{prompt::PromptContext, tool::ToolCallContext},
     model::{
-        ServerCapabilities, ServerInfo, GetPromptResult, ListResourcesResult,
-        ReadResourceResult, PaginatedRequestParams, ReadResourceRequestParams,
-        CompleteRequestParams, CompleteResult, CompletionInfo, GetPromptRequestParams,
-        ListPromptsResult, CallToolRequestParams, CallToolResult, ListToolsResult,
-    },
-    handler::server::{
-        prompt::PromptContext, tool::ToolCallContext,
+        CallToolRequestParams, CallToolResult, CompleteRequestParams, CompleteResult,
+        CompletionInfo, GetPromptRequestParams, GetPromptResult, ListPromptsResult,
+        ListResourcesResult, ListToolsResult, PaginatedRequestParams, ReadResourceRequestParams,
+        ReadResourceResult, ServerCapabilities, ServerInfo,
     },
     service::{RequestContext, RoleServer},
-    ErrorData,
+    transport::stdio,
 };
 
 struct ArchitectServer {
@@ -43,7 +41,7 @@ impl ServerHandler for ArchitectServer {
                 .enable_tools()
                 .enable_prompts()
                 .enable_resources()
-                .build()
+                .build(),
         )
         .with_instructions("Refined Modular Architect MCP server".to_string())
     }
@@ -75,13 +73,26 @@ impl ServerHandler for ArchitectServer {
 
         if request.argument.name == "function_name" {
             let value = request.argument.value.to_lowercase();
-            let root_opt = self.state.last_root.read().map(|g| g.clone()).unwrap_or(None);
-            
+            let root_opt = self
+                .state
+                .last_root
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or(None);
+
             if let Some(root) = root_opt {
                 // 최적화: 락을 짧게 유지하기 위해 키 목록만 빠르게 복제하여 가져옴
                 let keys: Vec<String> = {
-                    let cache = self.state.workspace_cache.read().map(|g| g.clone()).unwrap_or_default();
-                    cache.get(&root).map(|ws| ws.cached_definitions.keys().cloned().collect()).unwrap_or_default()
+                    let cache = self
+                        .state
+                        .workspace_cache
+                        .read()
+                        .map(|g| g.clone())
+                        .unwrap_or_default();
+                    cache
+                        .get(&root)
+                        .map(|ws| ws.cached_definitions.keys().cloned().collect())
+                        .unwrap_or_default()
                 };
 
                 // 락이 해제된 상태에서 무거운 필터링 작업 수행
@@ -93,16 +104,16 @@ impl ServerHandler for ArchitectServer {
             }
         }
 
-        let info = CompletionInfo::new(completions)
-            .map_err(|e| ErrorData::internal_error(e, None))?;
-            
+        let info =
+            CompletionInfo::new(completions).map_err(|e| ErrorData::internal_error(e, None))?;
+
         Ok(CompleteResult::new(info))
     }
 
     async fn list_prompts(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>
+        _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, ErrorData> {
         let items = self.prompts.prompt_router.list_all();
         Ok(ListPromptsResult::with_all_items(items))
@@ -111,7 +122,7 @@ impl ServerHandler for ArchitectServer {
     async fn get_prompt(
         &self,
         request: GetPromptRequestParams,
-        context: RequestContext<RoleServer>
+        context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, ErrorData> {
         let pc = PromptContext::new(&self.prompts, request.name, request.arguments, context);
         self.prompts.prompt_router.get_prompt(pc).await
@@ -147,6 +158,6 @@ async fn main() -> anyhow::Result<()> {
     let service = ArchitectServer::new();
     let server = service.serve(stdio()).await?;
     server.waiting().await?;
-    
+
     Ok(())
 }

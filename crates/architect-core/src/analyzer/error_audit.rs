@@ -1,8 +1,8 @@
-use std::path::Path;
-use serde_json::{Value, json};
-use tree_sitter::{Parser, Query, QueryCursor};
 use crate::languages::LanguageProvider;
+use serde_json::{Value, json};
 use std::cell::RefCell;
+use std::path::Path;
+use tree_sitter::{Parser, Query, QueryCursor};
 
 thread_local! {
     static PARSER: RefCell<Parser> = RefCell::new(Parser::new());
@@ -11,7 +11,12 @@ thread_local! {
 pub struct ErrorAuditAnalyzer;
 
 impl ErrorAuditAnalyzer {
-    pub fn analyze(&self, path: &Path, content: &str, provider: &dyn LanguageProvider) -> Vec<Value> {
+    pub fn analyze(
+        &self,
+        path: &Path,
+        content: &str,
+        provider: &dyn LanguageProvider,
+    ) -> Vec<Value> {
         PARSER.with(|parser_cell| {
             let mut parser = parser_cell.borrow_mut();
             let lang = provider.language();
@@ -33,7 +38,7 @@ impl ErrorAuditAnalyzer {
                     for capture in m.captures {
                         let name = &content[capture.node.byte_range()];
                         let start_pos = capture.node.start_position();
-                        
+
                         results.push(json!({
                             "issue": "Error Handling Anti-pattern",
                             "location": name,

@@ -1,21 +1,20 @@
-use architect_types::{FnDefinition, CallInfo};
+
+use architect_types::{CallInfo, FnDefinition};
+use ignore::WalkBuilder;
+use rayon::prelude::*;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock}; // Mutex 대신 RwLock 도입
-use ignore::WalkBuilder;
-use rayon::prelude::*;
-use anyhow::{Result, Context};
 
-pub mod languages;
 pub mod analyzer;
+pub mod languages;
 
-use languages::{LanguageRegistry, LanguageProvider};
 use analyzer::{
-    MetricsAnalyzer, DependencyAnalyzer, SymbolAnalyzer, 
-    SecurityAnalyzer, ApiAnalyzer, ExternalCouplingAnalyzer,
-    OutboundCallsAnalyzer, ErrorAuditAnalyzer
+    ApiAnalyzer, DependencyAnalyzer, ErrorAuditAnalyzer, ExternalCouplingAnalyzer, MetricsAnalyzer,
+    OutboundCallsAnalyzer, SecurityAnalyzer, SymbolAnalyzer,
 };
+use languages::{LanguageProvider, LanguageRegistry};
 
 #[derive(Default, Clone, Debug)]
 pub struct WorkspaceState {
@@ -50,21 +49,24 @@ impl SharedState {
             .collect()
     }
 
-    fn process_files_parallel<F, R>(&self, root: &Path, f: F) -> Vec<R> 
-    where 
+    fn process_files_parallel<F, R>(&self, root: &Path, f: F) -> Vec<R>
+    where
         F: Fn(&Path, &str, &dyn LanguageProvider) -> R + Sync + Send,
-        R: Send
+        R: Send,
     {
         let files = self.get_files(root);
-        files.par_iter().filter_map(|path| {
-            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-            if let Some(provider) = self.registry.get_provider(ext) {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    return Some(f(path, &content, provider.as_ref()));
+        files
+            .par_iter()
+            .filter_map(|path| {
+                let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                if let Some(provider) = self.registry.get_provider(ext) {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        return Some(f(path, &content, provider.as_ref()));
+                    }
                 }
-            }
-            None
-        }).collect()
+                None
+            })
+            .collect()
     }
 
     pub fn index_definitions(&self, root: &Path) -> HashMap<String, Vec<FnDefinition>> {
@@ -81,13 +83,20 @@ impl SharedState {
         }
 
         if let Ok(mut cache) = self.workspace_cache.write() {
-            cache.entry(root.to_path_buf()).or_default().cached_definitions = definitions.clone();
+            cache
+                .entry(root.to_path_buf())
+                .or_default()
+                .cached_definitions = definitions.clone();
         }
 
         definitions
     }
 
-    pub fn find_calls(&self, root: &Path, definitions: &HashMap<String, Vec<FnDefinition>>) -> Vec<CallInfo> {
+    pub fn find_calls(
+        &self,
+        root: &Path,
+        definitions: &HashMap<String, Vec<FnDefinition>>,
+    ) -> Vec<CallInfo> {
         let analyzer = SymbolAnalyzer;
         let all_calls = self.process_files_parallel(root, |path, content, provider| {
             analyzer.find_calls(path, content, provider, definitions)
@@ -116,7 +125,11 @@ impl SharedState {
         let results = self.process_files_parallel(root, |path, content, provider| {
             let imports = analyzer.analyze(path, content, provider);
             if !imports.is_empty() {
-                let rel_path = path.strip_prefix(root).unwrap_or(path).display().to_string();
+                let rel_path = path
+                    .strip_prefix(root)
+                    .unwrap_or(path)
+                    .display()
+                    .to_string();
                 Some((rel_path, imports))
             } else {
                 None
@@ -154,8 +167,9 @@ impl SharedState {
     pub fn analyze_test_gap(&self, root: &Path) -> Value {
         let metrics_value = self.get_metrics(root);
         let files = self.get_files(root);
-        
-        let test_files: HashSet<String> = files.iter()
+
+        let test_files: HashSet<String> = files
+            .iter()
             .map(|p| p.display().to_string())
             .filter(|s| s.to_lowercase().contains("test") || s.to_lowercase().contains("spec"))
             .collect();
@@ -165,11 +179,14 @@ impl SharedState {
             for m in metrics {
                 let complexity = m["cyclomatic_complexity"].as_u64().unwrap_or(0);
                 let file = m["file"].as_str().unwrap_or("");
-                
+
                 if complexity >= 5 && !test_files.contains(file) {
-                    let file_name = Path::new(file).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    let file_name = Path::new(file)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
                     let has_test = test_files.iter().any(|t| t.contains(file_name));
-                    
+
                     if !has_test {
                         gaps.push(json!({
                             "function": m["function"],
@@ -206,13 +223,14 @@ impl SharedState {
 
     pub fn detect_architecture_pattern(&self, root: &Path) -> Value {
         let mut folder_names = HashSet::new();
-        
+
         for entry in WalkBuilder::new(root)
             .max_depth(Some(4))
             .hidden(true)
             .git_ignore(true)
             .build()
-            .filter_map(|e| e.ok()) {
+            .filter_map(|e| e.ok())
+        {
             if entry.file_type().map_or(false, |ft| ft.is_dir()) {
                 if let Some(name) = entry.file_name().to_str() {
                     folder_names.insert(name.to_lowercase());
@@ -222,26 +240,66 @@ impl SharedState {
 
         let mut patterns = Vec::new();
 
-        let layered_keywords = ["controllers", "services", "repositories", "models", "dto", "api", "views"];
-        let layered_score = layered_keywords.iter().filter(|&&k| folder_names.contains(k)).count();
+        let layered_keywords = [
+            "controllers",
+            "services",
+            "repositories",
+            "models",
+            "dto",
+            "api",
+            "views",
+        ];
+        let layered_score = layered_keywords
+            .iter()
+            .filter(|&&k| folder_names.contains(k))
+            .count();
         if layered_score >= 2 {
             patterns.push(json!({ "name": "Layered Architecture", "confidence": layered_score as f32 / layered_keywords.len() as f32 }));
         }
 
-        let hexagonal_keywords = ["domain", "ports", "adapters", "application", "infrastructure"];
-        let hexagonal_score = hexagonal_keywords.iter().filter(|&&k| folder_names.contains(k)).count();
+        let hexagonal_keywords = [
+            "domain",
+            "ports",
+            "adapters",
+            "application",
+            "infrastructure",
+        ];
+        let hexagonal_score = hexagonal_keywords
+            .iter()
+            .filter(|&&k| folder_names.contains(k))
+            .count();
         if hexagonal_score >= 2 {
             patterns.push(json!({ "name": "Hexagonal Architecture", "confidence": hexagonal_score as f32 / hexagonal_keywords.len() as f32 }));
         }
 
-        let clean_keywords = ["entities", "use_cases", "interfaces", "frameworks", "drivers"];
-        let clean_score = clean_keywords.iter().filter(|&&k| folder_names.contains(k)).count();
+        let clean_keywords = [
+            "entities",
+            "use_cases",
+            "interfaces",
+            "frameworks",
+            "drivers",
+        ];
+        let clean_score = clean_keywords
+            .iter()
+            .filter(|&&k| folder_names.contains(k))
+            .count();
         if clean_score >= 2 {
             patterns.push(json!({ "name": "Clean Architecture", "confidence": clean_score as f32 / clean_keywords.len() as f32 }));
         }
 
-        let frontend_keywords = ["components", "containers", "actions", "reducers", "store", "hooks", "pages"];
-        let frontend_score = frontend_keywords.iter().filter(|&&k| folder_names.contains(k)).count();
+        let frontend_keywords = [
+            "components",
+            "containers",
+            "actions",
+            "reducers",
+            "store",
+            "hooks",
+            "pages",
+        ];
+        let frontend_score = frontend_keywords
+            .iter()
+            .filter(|&&k| folder_names.contains(k))
+            .count();
         if frontend_score >= 2 {
             patterns.push(json!({ "name": "Frontend Standard (React/Redux)", "confidence": frontend_score as f32 / frontend_keywords.len() as f32 }));
         }
@@ -257,8 +315,12 @@ impl SharedState {
             Ok(c) => c,
             Err(_) => return "graph TD;\n    Error[Lock Poisoned];".to_string(),
         };
-        let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
-        
+        let calls = cache
+            .get(root)
+            .map(|s| &s.cached_calls)
+            .cloned()
+            .unwrap_or_default();
+
         let mut diagram = String::from("graph TD;\n");
         let mut seen = HashSet::new();
 
@@ -274,13 +336,22 @@ impl SharedState {
         diagram
     }
 
-    pub fn get_blast_radius(&self, root: &Path, target_symbol: Option<String>, target_file: Option<String>) -> Value {
+    pub fn get_blast_radius(
+        &self,
+        root: &Path,
+        target_symbol: Option<String>,
+        target_file: Option<String>,
+    ) -> Value {
         let cache = match self.workspace_cache.read() {
             Ok(c) => c,
             Err(_) => return json!({"error": "Lock poisoned"}),
         };
-        let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
-        
+        let calls = cache
+            .get(root)
+            .map(|s| &s.cached_calls)
+            .cloned()
+            .unwrap_or_default();
+
         let mut impacted_symbols = Vec::new();
         let mut impacted_files = HashSet::new();
 
@@ -289,7 +360,9 @@ impl SharedState {
             let mut visited = HashSet::new();
 
             while let Some(callee) = to_visit.pop() {
-                if visited.contains(&callee) { continue; }
+                if visited.contains(&callee) {
+                    continue;
+                }
                 visited.insert(callee.clone());
 
                 for call in calls.iter() {
@@ -311,7 +384,9 @@ impl SharedState {
                 let mut visited = HashSet::new();
 
                 while let Some(current_file) = to_visit.pop() {
-                    if visited.contains(&current_file) { continue; }
+                    if visited.contains(&current_file) {
+                        continue;
+                    }
                     visited.insert(current_file.clone());
 
                     for (file, imports) in deps_map {
@@ -339,7 +414,7 @@ impl SharedState {
         let definitions = self.index_definitions(root);
         let calls = self.find_calls(root, &definitions);
         let called_names: HashSet<String> = calls.iter().map(|c| c.callee_name.clone()).collect();
-        
+
         let mut dead_code = Vec::new();
 
         for (name, defs) in definitions {
@@ -370,7 +445,11 @@ impl SharedState {
             Ok(c) => c,
             Err(_) => return json!({"error": "Lock poisoned"}),
         };
-        let calls = cache.get(root).map(|s| &s.cached_calls).cloned().unwrap_or_default();
+        let calls = cache
+            .get(root)
+            .map(|s| &s.cached_calls)
+            .cloned()
+            .unwrap_or_default();
         let deps_value = self.get_dependencies(root);
 
         let mut forbidden_deps = Vec::new();
@@ -380,7 +459,8 @@ impl SharedState {
                     for rule in forbidden {
                         if let Some(pair) = rule.as_array() {
                             if pair.len() == 2 {
-                                if let (Some(from), Some(to)) = (pair[0].as_str(), pair[1].as_str()) {
+                                if let (Some(from), Some(to)) = (pair[0].as_str(), pair[1].as_str())
+                                {
                                     forbidden_deps.push((from.to_string(), to.to_string()));
                                 }
                             }
@@ -452,12 +532,24 @@ impl SharedState {
 
         for path in &files {
             total_files += 1;
-            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("unknown");
+            let ext = path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
             *lang_counts.entry(ext.to_string()).or_insert(0) += 1;
 
             let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            if file_name.starts_with("main.") || file_name.starts_with("app.") || file_name.starts_with("index.") || file_name == "lib.rs" {
-                entry_points.push(path.strip_prefix(root).unwrap_or(path).display().to_string());
+            if file_name.starts_with("main.")
+                || file_name.starts_with("app.")
+                || file_name.starts_with("index.")
+                || file_name == "lib.rs"
+            {
+                entry_points.push(
+                    path.strip_prefix(root)
+                        .unwrap_or(path)
+                        .display()
+                        .to_string(),
+                );
             }
         }
 
@@ -479,10 +571,14 @@ impl SharedState {
 
         let mut top_modules = HashSet::new();
         for path in &files {
-            if let Some(parent) = path.strip_prefix(root).ok().and_then(|p| p.components().next()) {
+            if let Some(parent) = path
+                .strip_prefix(root)
+                .ok()
+                .and_then(|p| p.components().next())
+            {
                 let name = parent.as_os_str().to_string_lossy().to_string();
                 if name != "src" && !name.starts_with('.') {
-                     top_modules.insert(name);
+                    top_modules.insert(name);
                 }
             }
         }
