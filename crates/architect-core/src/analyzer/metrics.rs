@@ -17,7 +17,7 @@ impl MetricsAnalyzer {
         content: &str,
         provider: &dyn LanguageProvider,
     ) -> Vec<Value> {
-        let results = PARSER.with(|parser_cell| {
+        PARSER.with(|parser_cell| {
             let mut parser = parser_cell.borrow_mut();
             if let Err(e) = parser.set_language(&provider.language()) {
                 tracing::error!("Error loading grammar for {:?}: {}", path, e);
@@ -33,8 +33,7 @@ impl MetricsAnalyzer {
 
             self.traverse_for_metrics(&mut cursor, content, path, &mut results, provider);
             results
-        });
-        results
+        })
     }
 
     fn traverse_for_metrics<'a>(
@@ -83,12 +82,11 @@ impl MetricsAnalyzer {
     fn calculate_complexity(&self, node: Node, provider: &dyn LanguageProvider) -> usize {
         let mut complexity = 1;
         let mut cursor = node.walk();
-        self.count_complexity_nodes(&mut cursor, &mut complexity, provider);
+        Self::count_complexity_nodes(&mut cursor, &mut complexity, provider);
         complexity
     }
 
     fn count_complexity_nodes(
-        &self,
         cursor: &mut tree_sitter::TreeCursor,
         count: &mut usize,
         provider: &dyn LanguageProvider,
@@ -100,7 +98,7 @@ impl MetricsAnalyzer {
 
         if cursor.goto_first_child() {
             loop {
-                self.count_complexity_nodes(cursor, count, provider);
+                Self::count_complexity_nodes(cursor, count, provider);
                 if !cursor.goto_next_sibling() {
                     break;
                 }

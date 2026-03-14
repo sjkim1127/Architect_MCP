@@ -17,6 +17,12 @@ pub struct LanguageRegistry {
     providers: HashMap<&'static str, Arc<dyn LanguageProvider>>,
 }
 
+impl Default for LanguageRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LanguageRegistry {
     pub fn new() -> Self {
         let mut providers: HashMap<&'static str, Arc<dyn LanguageProvider>> = HashMap::new();
@@ -70,7 +76,7 @@ impl LanguageRegistry {
 struct RustProvider;
 impl LanguageProvider for RustProvider {
     fn language(&self) -> Language {
-        tree_sitter_rust::language().into()
+        tree_sitter_rust::language()
     }
     fn fn_query(&self) -> &str {
         "(function_item name: (identifier) @fn_name)"
@@ -101,7 +107,7 @@ impl LanguageProvider for RustProvider {
 struct PythonProvider;
 impl LanguageProvider for PythonProvider {
     fn language(&self) -> Language {
-        tree_sitter_python::language().into()
+        tree_sitter_python::language()
     }
     fn fn_query(&self) -> &str {
         "(function_definition name: (identifier) @fn_name)"
@@ -132,7 +138,7 @@ impl LanguageProvider for PythonProvider {
 struct JsTsProvider;
 impl LanguageProvider for JsTsProvider {
     fn language(&self) -> Language {
-        tree_sitter_typescript::language_typescript().into()
+        tree_sitter_typescript::language_typescript()
     }
     fn fn_query(&self) -> &str {
         "(function_declaration name: (identifier) @fn_name) (method_definition name: (property_identifier) @fn_name)"
@@ -169,7 +175,7 @@ impl LanguageProvider for JsTsProvider {
 struct GoProvider;
 impl LanguageProvider for GoProvider {
     fn language(&self) -> Language {
-        tree_sitter_go::language().into()
+        tree_sitter_go::language()
     }
     fn fn_query(&self) -> &str {
         "(function_declaration name: (identifier) @fn_name) (method_declaration name: (field_identifier) @fn_name)"
@@ -200,7 +206,7 @@ impl LanguageProvider for GoProvider {
 struct CCppProvider;
 impl LanguageProvider for CCppProvider {
     fn language(&self) -> Language {
-        tree_sitter_cpp::language().into()
+        tree_sitter_cpp::language()
     } // C++ 파서로 통합 사용 가능
     fn fn_query(&self) -> &str {
         "(function_definition declarator: (function_declarator declarator: (identifier) @fn_name))"
@@ -237,7 +243,7 @@ impl LanguageProvider for CCppProvider {
 struct JavaProvider;
 impl LanguageProvider for JavaProvider {
     fn language(&self) -> Language {
-        tree_sitter_java::language().into()
+        tree_sitter_java::language()
     }
     fn fn_query(&self) -> &str {
         "(method_declaration name: (identifier) @fn_name) (constructor_declaration name: (identifier) @fn_name)"
@@ -274,7 +280,7 @@ impl LanguageProvider for JavaProvider {
 struct RubyProvider;
 impl LanguageProvider for RubyProvider {
     fn language(&self) -> Language {
-        tree_sitter_ruby::language().into()
+        tree_sitter_ruby::language()
     }
     fn fn_query(&self) -> &str {
         "(method name: (identifier) @fn_name) (singleton_method name: (identifier) @fn_name)"
@@ -305,7 +311,7 @@ impl LanguageProvider for RubyProvider {
 struct PhpProvider;
 impl LanguageProvider for PhpProvider {
     fn language(&self) -> Language {
-        tree_sitter_php::language_php().into()
+        tree_sitter_php::language_php()
     }
     fn fn_query(&self) -> &str {
         "(function_definition name: (name) @fn_name) (method_declaration name: (name) @fn_name)"
@@ -345,7 +351,7 @@ impl LanguageProvider for PhpProvider {
 struct KotlinProvider;
 impl LanguageProvider for KotlinProvider {
     fn language(&self) -> Language {
-        tree_sitter_kotlin::language().into()
+        tree_sitter_kotlin::language()
     }
     fn fn_query(&self) -> &str {
         "(function_declaration name: (simple_identifier) @fn_name)"

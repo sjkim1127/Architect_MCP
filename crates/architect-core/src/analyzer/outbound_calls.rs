@@ -20,7 +20,7 @@ impl OutboundCallsAnalyzer {
         PARSER.with(|parser_cell| {
             let mut parser = parser_cell.borrow_mut();
             let lang = provider.language();
-            if let Err(_) = parser.set_language(&lang) {
+            if parser.set_language(&lang).is_err() {
                 return Vec::new();
             }
 

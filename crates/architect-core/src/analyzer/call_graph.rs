@@ -97,11 +97,11 @@ impl SymbolAnalyzer {
                             let mut current = node.parent();
                             while let Some(parent) = current {
                                 let kind = parent.kind();
-                                if kind.contains("function") || kind.contains("method") {
-                                    if let Some(name_node) = parent.child_by_field_name("name") {
-                                        caller_name = Some(content[name_node.byte_range()].to_string());
-                                        break;
-                                    }
+                                if (kind.contains("function") || kind.contains("method"))
+                                    && let Some(name_node) = parent.child_by_field_name("name")
+                                {
+                                    caller_name = Some(content[name_node.byte_range()].to_string());
+                                    break;
                                 }
                                 current = parent.parent();
                             }

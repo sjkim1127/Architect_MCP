@@ -28,6 +28,12 @@ pub struct SharedState {
     pub registry: Arc<LanguageRegistry>,
 }
 
+impl Default for SharedState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SharedState {
     pub fn new() -> Self {
         Self {
@@ -43,7 +49,7 @@ impl SharedState {
             .git_ignore(true)
             .build()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().map_or(false, |ft| ft.is_file()))
+            .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
             .map(|e| e.path().to_path_buf())
             .collect()
     }
@@ -58,10 +64,10 @@ impl SharedState {
             .par_iter()
             .filter_map(|path| {
                 let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if let Some(provider) = self.registry.get_provider(ext) {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        return Some(f(path, &content, provider.as_ref()));
-                    }
+                if let Some(provider) = self.registry.get_provider(ext)
+                    && let Ok(content) = std::fs::read_to_string(path)
+                {
+                    return Some(f(path, &content, provider.as_ref()));
                 }
                 None
             })
@@ -230,10 +236,10 @@ impl SharedState {
             .build()
             .filter_map(|e| e.ok())
         {
-            if entry.file_type().map_or(false, |ft| ft.is_dir()) {
-                if let Some(name) = entry.file_name().to_str() {
-                    folder_names.insert(name.to_lowercase());
-                }
+            if entry.file_type().is_some_and(|ft| ft.is_dir())
+                && let Some(name) = entry.file_name().to_str()
+            {
+                folder_names.insert(name.to_lowercase());
             }
         }
 
@@ -377,24 +383,24 @@ impl SharedState {
         }
 
         let deps_value = self.get_dependencies(root);
-        if let Some(target_path) = target_file {
-            if let Some(deps_map) = deps_value.as_object() {
-                let mut to_visit = vec![target_path];
-                let mut visited = HashSet::new();
+        if let Some(target_path) = target_file
+            && let Some(deps_map) = deps_value.as_object()
+        {
+            let mut to_visit = vec![target_path];
+            let mut visited = HashSet::new();
 
-                while let Some(current_file) = to_visit.pop() {
-                    if visited.contains(&current_file) {
-                        continue;
-                    }
-                    visited.insert(current_file.clone());
+            while let Some(current_file) = to_visit.pop() {
+                if visited.contains(&current_file) {
+                    continue;
+                }
+                visited.insert(current_file.clone());
 
-                    for (file, imports) in deps_map {
-                        for import in imports.as_array().unwrap_or(&vec![]) {
-                            let import_str = import.as_str().unwrap_or("");
-                            if import_str.contains(&current_file) {
-                                impacted_files.insert(file.clone());
-                                to_visit.push(file.clone());
-                            }
+                for (file, imports) in deps_map {
+                    for import in imports.as_array().unwrap_or(&vec![]) {
+                        let import_str = import.as_str().unwrap_or("");
+                        if import_str.contains(&current_file) {
+                            impacted_files.insert(file.clone());
+                            to_visit.push(file.clone());
                         }
                     }
                 }
@@ -452,19 +458,16 @@ impl SharedState {
         let deps_value = self.get_dependencies(root);
 
         let mut forbidden_deps = Vec::new();
-        if let Some(json_str) = rules_json {
-            if let Ok(v) = serde_json::from_str::<Value>(&json_str) {
-                if let Some(forbidden) = v.get("forbidden_deps").and_then(|f| f.as_array()) {
-                    for rule in forbidden {
-                        if let Some(pair) = rule.as_array() {
-                            if pair.len() == 2 {
-                                if let (Some(from), Some(to)) = (pair[0].as_str(), pair[1].as_str())
-                                {
-                                    forbidden_deps.push((from.to_string(), to.to_string()));
-                                }
-                            }
-                        }
-                    }
+        if let Some(json_str) = rules_json
+            && let Ok(v) = serde_json::from_str::<Value>(&json_str)
+            && let Some(forbidden) = v.get("forbidden_deps").and_then(|f| f.as_array())
+        {
+            for rule in forbidden {
+                if let Some(pair) = rule.as_array()
+                    && pair.len() == 2
+                    && let (Some(from), Some(to)) = (pair[0].as_str(), pair[1].as_str())
+                {
+                    forbidden_deps.push((from.to_string(), to.to_string()));
                 }
             }
         }
@@ -505,14 +508,14 @@ impl SharedState {
         }
 
         for call in calls.iter() {
-            if let Some(ref caller) = call.caller_name {
-                if caller == &call.callee_name {
-                    violations.push(json!({
-                        "type": "Circular Dependency (Direct)",
-                        "symbol": caller,
-                        "file": call.caller_file.display().to_string()
-                    }));
-                }
+            if let Some(ref caller) = call.caller_name
+                && caller == &call.callee_name
+            {
+                violations.push(json!({
+                    "type": "Circular Dependency (Direct)",
+                    "symbol": caller,
+                    "file": call.caller_file.display().to_string()
+                }));
             }
         }
 
@@ -616,7 +619,7 @@ mod tests {
         fs::write(&file_path, "fn main() { if true { println!(\"hello\"); } }").unwrap();
 
         let metrics = state.get_metrics(dir.path());
-        assert!(metrics.as_array().unwrap().len() > 0);
+        assert!(!metrics.as_array().unwrap().is_empty());
         let first = &metrics.as_array().unwrap()[0];
         assert_eq!(first["function"], "main");
         assert_eq!(first["cyclomatic_complexity"], 2); // 1 (base) + 1 (if)
