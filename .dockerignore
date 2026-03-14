@@ -1,0 +1,13 @@
+target/
+.git/
+.github/
+vendor/
+.gemini/
+.agents/
+.agent/
+_agents/
+_agent/
+*.md
+LICENSE
+.gitignore
+.dockerignore

@@ -30,6 +30,7 @@ Using **Tree-sitter** for deep AST analysis and **Rayon** for high-performance p
 Architect MCP exposes a powerful suite of tools to your MCP client:
 
 ### 📊 Overview & Metrics
+
 - **`summarize_project_structure`**: High-level overview of language distribution, entry points, and top-level modules.
 - **`analyze_metrics`**: Calculates **Cyclomatic Complexity** and **Lines of Code (LoC)** to identify "Hotspots" or "Hell Functions".
 - **`analyze_test_gap`**: Identifies high-complexity functions that lack corresponding test files.
@@ -61,7 +62,7 @@ The project is structured as a modular Rust workspace:
   - `Analyzers`: Modular components (`Metrics`, `Symbol`, `Dependency`, etc.) that perform the actual AST traversal.
   - `SharedState`: Manages workspace-keyed caching to support concurrent multi-project analysis.
 - **`architect-tools`**: MCP tool definitions and routing logic.
-- **`architect-server`**: High-level MCP server implementation (Stdio transport).
+- **`architect-server`**: High-level MCP server implementation. Supports both **Stdio** and **SSE** (HTTP) transports for local and cloud deployment.
 - **`architect-types`**: Shared data structures for definitions and call information.
 
 ---
@@ -69,6 +70,7 @@ The project is structured as a modular Rust workspace:
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - [Rust](https://www.rust-lang.org/) (latest stable version)
 
 ### Installation & Run
@@ -92,6 +94,39 @@ The project is structured as a modular Rust workspace:
      }
    }
    ```
+
+---
+
+## 🐳 Docker & Cloud Deployment
+
+Architect MCP is container-ready and can be deployed to the cloud (e.g., Fly.io, Railway, AWS).
+
+### 1. Build Docker Image
+```bash
+docker build -t architect-mcp .
+```
+
+### 2. Run with Stdio (Local Docker)
+```bash
+docker run -i --rm architect-mcp
+```
+
+### 3. Run as SSE Server (Cloud/HTTP)
+To run as an HTTP server using Server-Sent Events (SSE):
+```bash
+docker run -p 3000:3000 \
+  -e MCP_TRANSPORT=sse \
+  -e PORT=3000 \
+  architect-mcp
+```
+
+### 4. Configuration Environment Variables
+
+| Variable | Description | Default |
+|---|---|---|
+| `MCP_TRANSPORT` | Transport mode (`stdio` or `sse`) | `stdio` |
+| `PORT` | HTTP port for SSE mode | `3000` |
+| `RUST_LOG` | Logging level (`info`, `debug`, `trace`) | `info` |
 
 ---
 

@@ -153,11 +153,51 @@ async fn main() -> anyhow::Result<()> {
         .with_ansi(false)
         .init();
 
-    tracing::info!("Starting Modular Architect MCP server");
+    tracing::info!("Starting Refined Modular Architect MCP server");
 
-    let service = ArchitectServer::new();
-    let server = service.serve(stdio()).await?;
-    server.waiting().await?;
+    let transport_mode = std::env::var("MCP_TRANSPORT").unwrap_or_else(|_| "stdio".to_string());
+
+    if transport_mode == "sse" {
+        use rmcp::transport::streamable_http_server::{
+            StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+        };
+        use std::sync::Arc;
+
+        let port = std::env::var("PORT")
+            .unwrap_or_else(|_| "3000".to_string())
+            .parse::<u16>()?;
+        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+
+        let ct = tokio_util::sync::CancellationToken::new();
+        let service_factory = Arc::new(ArchitectServer::new);
+
+        let service = StreamableHttpService::new(
+            move || Ok(service_factory()),
+            LocalSessionManager::default().into(),
+            StreamableHttpServerConfig {
+                cancellation_token: ct.child_token(),
+                ..Default::default()
+            },
+        );
+
+        let router = axum::Router::new().nest_service("/", service);
+        let tcp_listener = tokio::net::TcpListener::bind(addr).await?;
+        
+        tracing::info!("SSE server listening on {}", addr);
+        
+        axum::serve(tcp_listener, router)
+            .with_graceful_shutdown(async move {
+                tokio::signal::ctrl_c().await.unwrap();
+                tracing::info!("Shutting down SSE server...");
+                ct.cancel();
+            })
+            .await?;
+    } else {
+        tracing::info!("Starting STDIO server");
+        let service = ArchitectServer::new();
+        let server = service.serve(stdio()).await?;
+        server.waiting().await?;
+    }
 
     Ok(())
 }

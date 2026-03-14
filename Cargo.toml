@@ -24,7 +24,9 @@ async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 schemars = "1.2.1"
-rmcp = { version = "1.2.0", features = ["server", "transport-io"] }
+axum = { version = "0.7", features = ["macros"] }
+tokio-util = { version = "0.7", features = ["full"] }
+rmcp = { version = "1.2.0", features = ["server", "transport-io", "transport-streamable-http-server"] }
 architect-core = { path = "crates/architect-core" }
 architect-types = { path = "crates/architect-types" }
 architect-tools = { path = "crates/architect-tools" }
