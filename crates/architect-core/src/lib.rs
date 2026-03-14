@@ -1,4 +1,3 @@
-
 use architect_types::{CallInfo, FnDefinition};
 use ignore::WalkBuilder;
 use rayon::prelude::*;
