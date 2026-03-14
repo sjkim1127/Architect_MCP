@@ -10,10 +10,10 @@ Using **Tree-sitter** for deep AST analysis and **Rayon** for high-performance p
 
 - **Decoupled Plugin Architecture**: Support for 11+ languages with a modular provider system.
 - **Parallel Analysis Engine**: High-performance multi-core scanning for large-scale monorepos.
-- **Language-Agnostic Core**: Unified logic for metrics, dependencies, and impact analysis across all supported languages.
-- **AI Context Optimization**: Smart filtering of symbols (Blast Radius) to stay within LLM token limits while providing maximum context.
+- **Language-Agnostic Core**: Unified logic for metrics, dependencies, and impact analysis.
+- **AI Context Optimization**: Smart filtering of symbols (Blast Radius) to stay within LLM token limits.
 - **Architectural Governance**: Define and enforce layer boundaries and circular dependency rules via JSON.
-- **Infrastructure-Aware**: Automatically respects `.gitignore` and ignores build artifacts (via the `ignore` crate).
+- **Cloud Ready**: Native support for **SSE (Server-Sent Events)** for deployment on platforms like Fly.io or Railway.
 
 ---
 
@@ -25,66 +25,84 @@ Using **Tree-sitter** for deep AST analysis and **Rayon** for high-performance p
 
 ---
 
-## 🛠️ Analysis Tools
+## 🛠️ MCP Tool Suite
 
 Architect MCP exposes a powerful suite of tools to your MCP client:
 
 ### 📊 Overview & Metrics
-
-- **`summarize_project_structure`**: High-level overview of language distribution, entry points, and top-level modules.
-- **`analyze_metrics`**: Calculates **Cyclomatic Complexity** and **Lines of Code (LoC)** to identify "Hotspots" or "Hell Functions".
-- **`analyze_test_gap`**: Identifies high-complexity functions that lack corresponding test files.
+- **`summarize_project_structure`**: High-level overview of language distribution and patterns.
+- **`analyze_metrics`**: Calculates **Cyclomatic Complexity** and LoC.
+- **`analyze_test_gap`**: Identifies high-complexity functions lacking tests.
 
 ### 🔗 Dependency & Impact
-- **`analyze_call_graph`**: Builds a complete map of function calls and definitions across the workspace.
-- **`analyze_dependencies`**: Maps out import/include relationships between all files.
-- **`analyze_blast_radius`**: Integrated impact analysis. Shows exactly which symbols and files are affected if a specific function is changed.
-- **`analyze_external_coupling`**: Measures how deeply third-party libraries (SDKs, ORMs) penetrate your internal domain logic.
-- **`analyze_outbound_calls`**: Maps interactions with external systems (HTTP clients, gRPC, DB drivers).
+- **`analyze_call_graph`**: Builds a complete map of function calls across the workspace.
+- **`analyze_dependencies`**: Maps file-level import/include relationships.
+- **`analyze_blast_radius`**: Integrated impact analysis for symbols and files.
+- **`analyze_external_coupling`**: Measures depth of 3rd-party library penetration.
+- **`analyze_outbound_calls`**: Maps external system interactions (HTTP/gRPC/DB).
 
 ### 🛡️ Governance & Quality
-- **`lint_architecture`**: Enforces custom architectural rules. Detects circular dependencies and layer violations.
-- **`find_dead_code`**: Identifies functions and symbols that are defined but never used.
-- **`scan_security_hotspots`**: Scans for potentially dangerous patterns like `eval()`, `unsafe`, or raw system calls.
-- **`audit_error_handling`**: Audits for anti-patterns like swallowed exceptions (empty catch blocks) or excessive panics.
+- **`lint_architecture`**: Enforces layer boundaries and detects circular dependencies.
+- **`find_dead_code`**: Identifies unused functions and symbols.
+- **`scan_security_hotspots`**: Scans for `eval()`, `unsafe`, and other dangerous patterns.
+- **`audit_error_handling`**: Audits for anti-patterns like swallowed exceptions.
 
-### 🤖 AI Support
-- **`request_refactor_suggestion`**: Get AI-driven architectural improvement advice based on the current analysis context.
+### 🤖 AI Specific
+- **`request_refactor_suggestion`**: AI-driven architectural advice based on the current context.
+
+---
+
+## 💡 Advanced AI Capabilities: Prompts & Resources
+
+Architect MCP provides specialized **Prompts** and **Resources** to interact with AI agents more effectively.
+
+### 🎭 Specialized Prompts
+- **`architect-review`**: Guides the AI to perform a detailed architectural review of a specific function.
+- **`architect-refactor-suggestion`**: Instructs the AI to analyze "Hell Functions" and propose a refactoring roadmap.
+- **`architect-security-audit`**: Deep security audit using detected hotspots and API extraction.
+
+### 🌐 Live Resources
+- **`architect://call-graph/summary`**: Current workspace call graph data.
+- **`architect://visual/mermaid`**: Dynamic **Mermaid.js** diagram of call relationships.
+- **`architect://metrics/debt`**: Live technical debt reports.
+- **`architect://analysis/dead-code`**: List of unused symbols.
+- **`architect://analysis/structure`**: Project architecture summary.
+- **`architect://analysis/security`**: Live security hotspot feed.
 
 ---
 
 ## 📐 Internal Architecture
 
-The project is structured as a modular Rust workspace:
-
-- **`architect-core`**: The heart of the system.
-  - `LanguageRegistry`: Dynamically maps file extensions to `LanguageProvider` implementations.
-  - `Analyzers`: Modular components (`Metrics`, `Symbol`, `Dependency`, etc.) that perform the actual AST traversal.
-  - `SharedState`: Manages workspace-keyed caching to support concurrent multi-project analysis.
-- **`architect-tools`**: MCP tool definitions and routing logic.
-- **`architect-server`**: High-level MCP server implementation. Supports both **Stdio** and **SSE** (HTTP) transports for local and cloud deployment.
-- **`architect-types`**: Shared data structures for definitions and call information.
+```mermaid
+graph TD;
+    A[Client: Claude Desktop/Cursor] -- MCP (Stdio/SSE) --> B[architect-server];
+    B --> C[architect-tools];
+    B --> D[architect-prompts];
+    B --> E[architect-resources];
+    C & D & E --> F[architect-core];
+    F --> G[LanguageRegistry];
+    F --> H[Analyzers];
+    G --> I[Tree-sitter Providers];
+    H --> J[Parallel Processor: Rayon];
+```
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-
 - [Rust](https://www.rust-lang.org/) (latest stable version)
+- Or [Docker](https://www.docker.com/)
 
-### Installation & Run
-1. **Clone the repository**:
+### Installation & Local Run
+1. **Clone & Build**:
    ```bash
    git clone https://github.com/sjkim1127/Architect_MCP.git
    cd Architect_MCP
-   ```
-2. **Build the server**:
-   ```bash
    cargo build --release
    ```
-3. **Configure your MCP Client** (e.g., Claude Desktop):
-   Add the following to your `claude_desktop_config.json`:
+2. **Configure Client**:
+   Add to `claude_desktop_config.json`:
    ```json
    {
      "mcpServers": {
@@ -99,20 +117,14 @@ The project is structured as a modular Rust workspace:
 
 ## 🐳 Docker & Cloud Deployment
 
-Architect MCP is container-ready and can be deployed to the cloud (e.g., Fly.io, Railway, AWS).
+Architect MCP is container-ready for cloud deployment.
 
 ### 1. Build Docker Image
 ```bash
 docker build -t architect-mcp .
 ```
 
-### 2. Run with Stdio (Local Docker)
-```bash
-docker run -i --rm architect-mcp
-```
-
-### 3. Run as SSE Server (Cloud/HTTP)
-To run as an HTTP server using Server-Sent Events (SSE):
+### 2. Run as SSE Server (Cloud/HTTP)
 ```bash
 docker run -p 3000:3000 \
   -e MCP_TRANSPORT=sse \
@@ -120,8 +132,7 @@ docker run -p 3000:3000 \
   architect-mcp
 ```
 
-### 4. Configuration Environment Variables
-
+### 3. Environment Variables
 | Variable | Description | Default |
 |---|---|---|
 | `MCP_TRANSPORT` | Transport mode (`stdio` or `sse`) | `stdio` |
@@ -131,9 +142,9 @@ docker run -p 3000:3000 \
 ---
 
 ## 🧪 CI/CD
-The project includes a robust CI pipeline via GitHub Actions:
-- **Lint & Format**: Automated `clippy` and `rustfmt` checks.
-- **Build & Test**: Full workspace builds and unit tests for core analysis logic on every push.
+Automated pipelines ensure quality on every push:
+- **Lint & Format**: Automated `clippy` and `rustfmt`.
+- **Build & Test**: Full workspace validation on Linux/Mac.
 
 ---
 
